@@ -42,16 +42,16 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 3 — Native Desktop UI  `[ ]`
+## Phase 3 — Native Desktop UI  `[x]`
 
-- [ ] Main PySide6 window titled "Local AI Assistant"
-- [ ] New Chat button and Chat History sidebar
-- [ ] Message input with Send and Cancel
-- [ ] Response area with syntax-highlighted code blocks and Copy buttons
-- [ ] Code viewer and project file tree
-- [ ] Generate Project, Export Project, Export ZIP controls (stubs for now)
-- [ ] Model indicator, Ollama status, progress and error indicators
-- [ ] Worker-thread pattern (`QThread` or `QRunnable`) for long tasks
+- [x] Main PySide6 window titled "Local AI Assistant"
+- [x] New Chat button and Chat History sidebar (in-memory until Phase 5)
+- [x] Message input with Send and Cancel (Stop)
+- [x] Response area with syntax-highlighted code blocks and Copy buttons
+- [x] Code viewer and project file tree
+- [x] Generate Project (Project mode chip), Export Project, Export ZIP controls (stubs for now)
+- [x] Model indicator, Ollama status (stub: Disconnected), progress and error indicators
+- [x] Worker-thread pattern (`QThread` + `QObject`) for long tasks; demo FakeStreamWorker
 
 **Deliverable:** app opens in its own window with no browser.
 
@@ -186,3 +186,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-11 | — | Plan created | — |
 | 2026-10-11 | 1 | Environment inspected (read-only). Blocked: no Ollama, no model, no Git, only Python 3.15 | none |
 | 2026-10-11 | 2 | Installed Python 3.12.10, Git, Ollama 0.40.2; venv + packages. Added config, errors, logging, system prompt, main.py, tests, git init | 54 passed |
+| 2026-10-11 | 3 | Native PySide6 UI: theme/QSS, SVG icons, sidebar, chat view, composer, preview panel (QTextBrowser HTML fallback), worker pattern, demo stream, `--screenshot` | 135 passed |

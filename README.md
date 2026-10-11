@@ -3,7 +3,8 @@
 A native Windows 11 desktop coding assistant built with Python and PySide6. It talks only to a
 local Ollama model (`qwen2.5-coder-14b:latest`) and works fully offline once installed.
 
-Status: Phase 2 (project foundation). The desktop window arrives in Phase 3.
+Status: Phase 3 (native desktop UI with demo data). The window shows canned demo answers
+until the Ollama connection is added in Phase 4.
 
 ## Prerequisites
 
@@ -32,13 +33,18 @@ Use `requirements.txt` instead if you only need to run the app.
 
 ```powershell
 python main.py --check   # print an environment summary and exit
-python main.py           # start the app (UI comes in Phase 3)
+python main.py           # open the desktop window
+python main.py --screenshot shot.png [--delay 800] [--no-preview]   # scripted demo + window capture
 ```
+
+The HTML preview uses QtWebEngine when it is installed (`pip install PySide6==6.12.0`).
+Without it, a basic `QTextBrowser` preview is shown with an "Open in default browser" button.
 
 ## Tests
 
 ```powershell
-python -m pytest -v                    # unit tests (integration tests are excluded)
+python -m pytest -v                    # unit + GUI tests (GUI runs offscreen; integration excluded)
+python -m pytest -v -m "not gui"       # skip the Qt widget tests
 python -m pytest -v -m integration     # tests that need a real Ollama model
 ```
 

@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -24,9 +26,12 @@ def test_check_exits_zero(tmp_path):
     assert (tmp_path / "data" / "logs" / "app.log").is_file()
 
 
-def test_plain_start_exits_zero(tmp_path):
-    result = _run(tmp_path)
+@pytest.mark.gui
+def test_screenshot_mode_saves_image_and_exits_zero(tmp_path):
+    shot = tmp_path / "shot.png"
+    result = _run(tmp_path, "--screenshot", str(shot), "--delay", "100", QT_QPA_PLATFORM="offscreen")
     assert result.returncode == 0, result.stderr
+    assert shot.is_file() and shot.stat().st_size > 10_000
 
 
 def test_bad_config_exits_two_without_traceback(tmp_path):
