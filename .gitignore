@@ -1,0 +1,25 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Build output
+build/
+dist/
+
+# Logs and local data
+*.log
+data/*
+!data/.gitkeep
+
+# Generated projects and exports
+output/
+generated/
+exports/
+projects/
+
+# Editors
+.vscode/
+.idea/
