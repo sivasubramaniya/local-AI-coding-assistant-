@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -16,9 +17,13 @@ class ConnectionState(Enum):
         return self is ConnectionState.CONNECTED
 
 
-def stub_connection_state() -> ConnectionState:
-    """Phase 3 stub: Ollama is never contacted, so report Disconnected.
+@dataclass(frozen=True)
+class HealthResult:
+    state: ConnectionState
+    message: str
+    version: str | None = None
 
-    Phase 4 replaces this with a real health check in a worker thread.
-    """
+
+def stub_connection_state() -> ConnectionState:
+    """Used when health checks are switched off (demo screenshots, some tests)."""
     return ConnectionState.DISCONNECTED

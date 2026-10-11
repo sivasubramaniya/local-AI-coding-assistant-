@@ -1,7 +1,9 @@
 # Runtime dependencies (versions from `pip show` in the project venv, Python 3.12.10)
-# PySide6-Essentials covers Qt Widgets. The full PySide6 package (adds QtWebEngine for
-# the HTML preview) is pending: its 131 MB WebEngine wheel failed to download. Decide in Phase 3.
+# PySide6 pulls in Essentials (Qt Widgets), Addons and WebEngine (HTML file preview only).
+PySide6==6.12.0
 PySide6-Essentials==6.12.0
+PySide6-Addons==6.12.0
+PySide6-WebEngine==6.12.0.140
 httpx==0.28.1
 pygments==2.21.0
 markdown==3.11

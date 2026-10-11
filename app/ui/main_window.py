@@ -1,12 +1,14 @@
 """Main window: Sidebar | QSplitter(chat panel, preview panel).
 
-The window wires widgets to the in-memory store and the demo worker. It holds no
-business rules; Phase 4/5 swap the fake worker and store for real services.
+The window wires widgets to the chat service, the Ollama workers and the health
+checks. Business rules (message building, trimming, history) live in
+app.backend.chat_service; network work runs in worker threads.
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -23,24 +25,38 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.backend.memory_store import ChatMessage, InMemoryChatStore, title_from_prompt
-from app.backend.status import ConnectionState, stub_connection_state
+from app.backend.chat_service import ChatService
+from app.backend.memory_store import InMemoryChatStore
+from app.backend.ollama_client import OllamaClient, StreamStats
+from app.backend.status import ConnectionState, HealthResult, stub_connection_state
 from app.config import AppConfig
-from app.errors import AppError
+from app.errors import AppError, ModelNotFoundError, OllamaUnavailableError
 from app.ui import demo, theme
 from app.ui.chat_view import ChatView
 from app.ui.composer import Composer
 from app.ui.icons import icon_size, load_icon
-from app.ui.message_widgets import AssistantMessage
+from app.ui.message_widgets import AssistantMessage, ErrorCard
 from app.ui.preview_panel import PreviewPanel
 from app.ui.sidebar import Sidebar
-from app.ui.workers import FakeStreamWorker, WorkerHandle, start_worker
+from app.ui.workers import (
+    FakeStreamWorker,
+    HealthCheckWorker,
+    OllamaStreamWorker,
+    WorkerHandle,
+    start_worker,
+)
 
 logger = logging.getLogger(__name__)
 
 EXPORT_PENDING = "Export is coming in Phase 9."
 TOAST_MS = 2600
 PREVIEW_SHARE = 0.45
+STATUS_LOADING = "Loading model…"
+STATUS_GENERATING = "Generating…"
+STATUS_STOPPED = "(stopped)"
+STATUS_FAILED = "Failed"
+STOP_WAIT_MS = 1500
+CLOSE_WAIT_MS = 6000
 
 
 def _top_bar_button(icon: str, tooltip: str, text: str = "") -> QToolButton:
@@ -56,8 +72,16 @@ def _top_bar_button(icon: str, tooltip: str, text: str = "") -> QToolButton:
     return button
 
 
+def finished_status(config: AppConfig, stats: StreamStats | None) -> str:
+    name = config.model_base_name
+    if stats is None or stats.eval_count <= 0:
+        return name
+    return f"{name} · {stats.eval_count} tokens · {stats.tokens_per_second:.1f} tok/s"
+
+
 class MainWindow(QMainWindow):
     streamFinished = Signal()
+    healthChecked = Signal(object)  # HealthResult
 
     def __init__(
         self,
@@ -65,16 +89,27 @@ class MainWindow(QMainWindow):
         store: InMemoryChatStore | None = None,
         token_delay_s: float = 0.04,
         use_webengine: bool | None = None,
-        seed_demo: bool = True,
+        demo_mode: bool = False,
+        client_factory: Callable[[], OllamaClient] | None = None,
+        health_checks: bool = True,
+        system_prompt: str | None = None,
     ) -> None:
         super().__init__()
         self.config = config
         self.store = store or InMemoryChatStore()
+        self.service = ChatService(self.store, config, system_prompt)
+        self.demo_mode = demo_mode
         self.token_delay_s = token_delay_s
+        self._client_factory = client_factory or (lambda: OllamaClient(config))
+        self._health_checks = health_checks
+        self._health = HealthResult(ConnectionState.CHECKING, "Checking Ollama…")
+
         self._handle: WorkerHandle | None = None
+        self._health_handle: WorkerHandle | None = None
         self._active_message: AssistantMessage | None = None
         self._active_chat_id: str | None = None
-        self._last_prompt: tuple[str, bool] | None = None
+        self._got_first_token = False
+        self._pending_chat_id: str | None = None
         self._current_chat_id: str | None = None
         self._expanded = False
 
@@ -110,14 +145,23 @@ class MainWindow(QMainWindow):
         self._toast_timer.timeout.connect(self.toast.hide)
 
         self._connect_signals()
-        self.preview.set_project(demo.DEMO_PROJECT_NAME, demo.DEMO_FILES)
-        self.sidebar.set_projects([demo.DEMO_PROJECT_NAME])
-        self.set_connection_state(stub_connection_state())
 
-        if seed_demo:
-            current = demo.seed_demo_store(self.store)
-            self.select_chat(current)
+        self._health_timer = QTimer(self)
+        self._health_timer.setInterval(int(config.health_interval_s * 1000))
+        self._health_timer.timeout.connect(self.check_health)
+        if health_checks:
+            self.set_health(self._health)
+            self._health_timer.start()
+            QTimer.singleShot(0, self.check_health)
         else:
+            self.set_health(HealthResult(stub_connection_state(), "Health checks are off."))
+
+        if demo_mode:
+            self.preview.set_project(demo.DEMO_PROJECT_NAME, demo.DEMO_FILES)
+            self.sidebar.set_projects([demo.DEMO_PROJECT_NAME])
+            self.select_chat(demo.seed_demo_store(self.store))
+        else:
+            self.sidebar.set_projects([])
             self.new_chat()
 
     # --- construction ----------------------------------------------------------
@@ -280,9 +324,55 @@ class MainWindow(QMainWindow):
         if self._current_chat_id:
             self._ask_delete(self._current_chat_id)
 
+    # --- health ----------------------------------------------------------------
+    def health(self) -> HealthResult:
+        return self._health
+
+    def set_health(self, result: HealthResult) -> None:
+        self._health = result
+        self.sidebar.status_card.set_state(result.state, result.message)
+
+    def set_connection_state(self, state: ConnectionState, message: str | None = None) -> None:
+        self.set_health(HealthResult(state, message or f"Ollama · {state.value}"))
+
+    def check_health(self) -> None:
+        """Run ensure_ready() in a worker. Never blocks the UI thread."""
+        if self._health_handle is not None:
+            return
+        worker = HealthCheckWorker(self._client_factory())
+        worker.finished.connect(self._on_health)
+        worker.error.connect(self._on_health_error)
+        self._health_handle = start_worker(worker, self)
+
+    def _on_health(self, result: object) -> None:
+        self._health_handle = None
+        if isinstance(result, HealthResult):
+            self.set_health(result)
+            self.healthChecked.emit(result)
+        self._resume_pending()
+
+    def _on_health_error(self, error: object) -> None:
+        self._health_handle = None
+        message = error.message if isinstance(error, AppError) else str(error)
+        self.set_health(HealthResult(ConnectionState.DISCONNECTED, message))
+        self.healthChecked.emit(self._health)
+        self._resume_pending()
+
+    def _resume_pending(self) -> None:
+        chat_id, self._pending_chat_id = self._pending_chat_id, None
+        if chat_id is None:
+            return
+        self.composer.set_busy(False)
+        if chat_id != self._current_chat_id or not self.store.exists(chat_id):
+            return
+        if self._health.state is ConnectionState.CONNECTED:
+            self._start_ollama(chat_id, self.service.regenerate(chat_id))
+        else:
+            self._show_not_ready()
+
     # --- generation ------------------------------------------------------------
     def is_busy(self) -> bool:
-        return self._handle is not None
+        return self._handle is not None or self._pending_chat_id is not None
 
     def _add_assistant_widget(self, status: str | None) -> AssistantMessage:
         widget = self.chat_view.add_assistant_message(status)
@@ -298,62 +388,117 @@ class MainWindow(QMainWindow):
         if self._current_chat_id is None or not self.store.exists(self._current_chat_id):
             self.new_chat()
         chat_id = self._current_chat_id
-        chat = self.store.get(chat_id)
-        if not chat.messages and chat.title == "New chat":
-            self.store.rename(chat_id, title_from_prompt(text))
-        self.store.add_message(chat_id, ChatMessage("user", text))
+        messages = self.service.send(chat_id, text)
         self._refresh_sidebar()
         self.chat_view.add_user_message(text)
-        self._last_prompt = (text, project_mode)
-        self._start_stream(chat_id)
+        self._dispatch(chat_id, messages)
         return True
 
     def regenerate(self) -> None:
-        if self._last_prompt and not self.is_busy():
-            self._start_stream(self._current_chat_id)
+        """Re-run the last user message (also used by Retry)."""
+        chat_id = self._current_chat_id
+        if self.is_busy() or chat_id is None:
+            return
+        try:
+            messages = self.service.regenerate(chat_id)
+        except AppError as exc:
+            self.show_toast(exc.message)
+            return
+        self.chat_view.remove_items_after_last_user()
+        self._dispatch(chat_id, messages)
 
-    def _start_stream(self, chat_id: str | None) -> None:
-        status = demo.DEMO_STATUS
+    def retry(self) -> None:
+        """Re-run the health check, then send the last user message if Ollama is ready."""
+        chat_id = self._current_chat_id
+        if self.is_busy() or chat_id is None:
+            return
+        if self.demo_mode:
+            self.regenerate()
+            return
+        self.chat_view.remove_items_after_last_user()
+        self._wait_for_health(chat_id, force_check=True)
+
+    def _dispatch(self, chat_id: str, messages: list[dict]) -> None:
+        if self.demo_mode:
+            self._start_fake(chat_id)
+        elif self._health.state is ConnectionState.CONNECTED:
+            self._start_ollama(chat_id, messages)
+        elif self._health.state is ConnectionState.CHECKING:
+            self._wait_for_health(chat_id, force_check=False)
+        else:
+            self._show_not_ready()
+
+    def _wait_for_health(self, chat_id: str, force_check: bool) -> None:
+        self._pending_chat_id = chat_id
+        self.composer.set_busy(True)
+        if force_check or self._health_handle is None:
+            self.set_health(HealthResult(ConnectionState.CHECKING, "Checking Ollama…"))
+        self.check_health()
+
+    def _show_not_ready(self) -> ErrorCard:
+        card = self.chat_view.add_error(self._health.message)
+        card.retryRequested.connect(self.retry)
+        return card
+
+    def _begin_stream(self, chat_id: str, worker, status: str) -> None:
         self._active_message = self._add_assistant_widget(status)
         self._active_chat_id = chat_id
-        worker = FakeStreamWorker(demo.DEMO_ANSWER, demo.DEMO_ANSWER_FILES, delay_s=self.token_delay_s)
+        self._got_first_token = False
         worker.token.connect(self._on_token)
         worker.finished.connect(self._on_finished)
         worker.cancelled.connect(self._on_cancelled)
         worker.error.connect(self._on_error)
         self._handle = start_worker(worker, self)
         self.composer.set_busy(True)
-        logger.info("Demo stream started (chat %s)", chat_id)
+
+    def _start_fake(self, chat_id: str) -> None:
+        worker = FakeStreamWorker(demo.DEMO_ANSWER, demo.DEMO_ANSWER_FILES, delay_s=self.token_delay_s)
+        self._begin_stream(chat_id, worker, demo.DEMO_STATUS)
+        logger.info("Demo stream started")
+
+    def _start_ollama(self, chat_id: str, messages: list[dict]) -> None:
+        worker = OllamaStreamWorker(self._client_factory(), messages)
+        self._begin_stream(chat_id, worker, STATUS_LOADING)
+        logger.info("Model stream started (%d messages)", len(messages))
 
     def stop_generation(self) -> None:
+        if self._pending_chat_id is not None and self._handle is None:
+            self._pending_chat_id = None
+            self.composer.set_busy(False)
+            return
         if self._handle is None:
             return
         handle = self._handle
         handle.cancel()
-        handle.wait(3000)
+        if not handle.wait(STOP_WAIT_MS):
+            logger.warning("Stream thread did not stop within %d ms", STOP_WAIT_MS)
         # the queued 'cancelled' signal may not be delivered yet; finish the UI state now
         self._on_cancelled()
 
     def _on_token(self, token: str) -> None:
-        if self._active_message is not None:
-            self._active_message.append_token(token)
+        if self._active_message is None:
+            return
+        if not self._got_first_token:
+            self._got_first_token = True
+            if not self.demo_mode:
+                self._active_message.set_status(STATUS_GENERATING)
+        self._active_message.append_token(token)
 
     def _on_finished(self, result: object) -> None:
         if self._handle is None:
             return
+        data = result if isinstance(result, dict) else {}
+        text = str(data.get("text", ""))
+        files = list(data.get("files", []))
+        status = demo.DEMO_STATUS if self.demo_mode else finished_status(self.config, data.get("stats"))
         message = self._active_message
-        files: list[str] = list(result.get("files", [])) if isinstance(result, dict) else []
-        text = result.get("text", "") if isinstance(result, dict) else ""
         if message is not None:
             message.set_text(text)
             for path in files:
                 message.add_file_card(path)
-            message.finish()
-        if self._active_chat_id and self.store.exists(self._active_chat_id):
-            self.store.add_message(
-                self._active_chat_id,
-                ChatMessage("assistant", text, files=files, status=demo.DEMO_STATUS),
-            )
+            message.finish(status=status)
+        if self._active_chat_id:
+            self.service.record_reply(self._active_chat_id, text, status, files)
         self._end_stream()
         self.streamFinished.emit()
 
@@ -362,20 +507,27 @@ class MainWindow(QMainWindow):
             return
         message = self._active_message
         if message is not None:
-            message.finish(status="Stopped")
-            if self._active_chat_id and self.store.exists(self._active_chat_id) and message.text():
-                self.store.add_message(
-                    self._active_chat_id, ChatMessage("assistant", message.text(), status="Stopped")
-                )
+            message.finish(status=STATUS_STOPPED)
+            if self._active_chat_id:
+                self.service.record_reply(self._active_chat_id, message.text(), STATUS_STOPPED)
         self._end_stream()
 
-    def _on_error(self, error: str) -> None:
+    def _on_error(self, error: object) -> None:
         if self._handle is None:
             return
-        if self._active_message is not None:
-            self._active_message.finish(status="Failed")
-        card = self.chat_view.add_error(error)
-        card.retryRequested.connect(self.regenerate)
+        err = error if isinstance(error, AppError) else AppError(str(error))
+        message = self._active_message
+        if message is not None:
+            if message.text():
+                message.finish(status=STATUS_FAILED)
+            else:
+                self.chat_view.remove_items_after_last_user()
+        if isinstance(err, ModelNotFoundError):
+            self.set_health(HealthResult(ConnectionState.MODEL_MISSING, err.message))
+        elif isinstance(err, OllamaUnavailableError) and "not running" in err.message:
+            self.set_health(HealthResult(ConnectionState.DISCONNECTED, err.message))
+        card = self.chat_view.add_error(err.message)
+        card.retryRequested.connect(self.retry)
         self._end_stream()
 
     def _end_stream(self) -> None:
@@ -421,13 +573,7 @@ class MainWindow(QMainWindow):
         if self.preview.expand_button.isChecked() != expanded:
             self.preview.expand_button.setChecked(expanded)
 
-    # --- status and feedback ---------------------------------------------------
-    def set_connection_state(self, state: ConnectionState) -> None:
-        detail = None
-        if state is ConnectionState.DISCONNECTED:
-            detail = "Not connected. The Ollama connection check arrives in Phase 4."
-        self.sidebar.status_card.set_state(state, detail)
-
+    # --- feedback --------------------------------------------------------------
     def show_toast(self, text: str) -> None:
         self.toast.setText(text)
         self.toast.adjustSize()
@@ -442,10 +588,14 @@ class MainWindow(QMainWindow):
 
     # --- lifecycle -------------------------------------------------------------
     def closeEvent(self, event) -> None:  # noqa: N802
+        self._health_timer.stop()
         if self._handle is not None:
             self._handle.cancel()
-            self._handle.wait(3000)
+            self._handle.wait(CLOSE_WAIT_MS)
             self._handle = None
+        if self._health_handle is not None:
+            self._health_handle.wait(CLOSE_WAIT_MS)
+            self._health_handle = None
         super().closeEvent(event)
 
     def sizeHint(self) -> QSize:  # noqa: N802

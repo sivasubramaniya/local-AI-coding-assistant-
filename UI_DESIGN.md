@@ -43,6 +43,7 @@ not any third-party product branding or logos.
 | `accent_primary` | `#2F6FE0` | Round send button, links, focus ring |
 | `success` | `#3FB950` | Checkmarks, "Connected" dot |
 | `error` | `#F85149` | Error states, "Disconnected" dot |
+| `warning` | `#D29922` | "Model missing" dot (amber) |
 | `preview_bg` | gradient `#1E2A5A` → `#4B3A9A` | Empty preview panel background |
 
 Put all tokens in one Python module (`app/ui/theme.py`) and generate a single QSS stylesheet from them.
@@ -69,7 +70,7 @@ Top to bottom:
 3. **Section label "Projects"** (`text_secondary`), then a list of generated projects with folder icons.
 4. **Section label "Recents"**, then the chat history list (scrollable). The selected chat gets `bg_item_selected` with 10px rounded corners. Right-click opens a menu: Rename, Delete.
 5. **Footer (pinned bottom):**
-   - Model status card: a circular badge on the left, then `qwen2.5-coder-14b` (bold) above an "Ollama · Connected" line with a green dot. The dot turns red with "Disconnected" or "Model missing".
+   - Model status card: a circular badge on the left, then `qwen2.5-coder-14b` (bold) above an "Ollama · Connected" line with a green dot. The dot turns red with "Disconnected" and amber with "Model missing".
    - A full-width rounded outline button below it: **Settings**.
 
 ---

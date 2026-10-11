@@ -17,6 +17,7 @@ LOG_FILE_NAME = "app.log"
 MAX_BYTES = 1_000_000
 BACKUP_COUNT = 5
 _HANDLER_MARK = "_laa_handler"
+NOISY_LIBRARIES = ("httpx", "httpcore")
 
 
 def setup_logging(config: AppConfig) -> logging.Logger:
@@ -46,4 +47,8 @@ def setup_logging(config: AppConfig) -> logging.Logger:
     root.addHandler(console)
     root.addHandler(file_handler)
     root.setLevel(config.log_level)
+    # httpx logs every request at INFO (health checks run every few seconds); keep that for DEBUG only
+    library_level = logging.DEBUG if config.log_level == "DEBUG" else logging.WARNING
+    for name in NOISY_LIBRARIES:
+        logging.getLogger(name).setLevel(library_level)
     return root

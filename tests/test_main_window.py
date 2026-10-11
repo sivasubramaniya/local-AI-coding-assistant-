@@ -11,7 +11,7 @@ pytestmark = pytest.mark.gui
 
 @pytest.fixture
 def window(qtbot, themed_app, tmp_config):
-    win = MainWindow(tmp_config, token_delay_s=0.005, use_webengine=False)
+    win = MainWindow(tmp_config, token_delay_s=0.005, use_webengine=False, demo_mode=True, health_checks=False)
     qtbot.addWidget(win)
     win.resize(1400, 850)
     win.show()
@@ -68,7 +68,7 @@ def test_stop_cancels_and_restores_send(qtbot, window):
     assert not window.is_busy()
     assert window.composer.send_button.toolTip().startswith("Send")
     assistant = window.chat_view.items[-1]
-    assert assistant.status_label.text() == "Stopped"
+    assert assistant.status_label.text() == "(stopped)"
     assert len(assistant.text()) < len(demo.DEMO_ANSWER)
 
 

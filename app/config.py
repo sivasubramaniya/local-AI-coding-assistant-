@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -40,6 +41,23 @@ class AppConfig:
     projects_dir: Path
     export_dir: Path
     log_level: str
+    keep_alive: str = "10m"
+    stream_read_timeout_s: float = 300.0
+    health_interval_s: float = 10.0
+
+    @property
+    def model_base_name(self) -> str:
+        """Model name without the ':latest' tag (the name used by `ollama create`)."""
+        return self.model_name.removesuffix(":latest")
+
+
+LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
+_KEEP_ALIVE_RE = re.compile(r"^(-1|0|\d+(\.\d+)?(ms|s|m|h)?)$")
+
+
+def model_options(config: AppConfig) -> dict[str, float | int]:
+    """Generation options sent to Ollama on every request."""
+    return {"temperature": config.temperature, "top_p": config.top_p, "num_ctx": config.num_ctx}
 
 
 def default_data_dir(env: Mapping[str, str] | None = None) -> Path:
@@ -105,6 +123,16 @@ def validate_config(config: AppConfig) -> AppConfig:
         raise ConfigError(
             f"Invalid config value for 'ollama_url': {config.ollama_url!r} is not an http(s) URL."
         )
+    try:
+        host = (url.hostname or "").lower()
+        url.port  # noqa: B018 - raises ValueError for a malformed port
+    except ValueError:
+        raise ConfigError(f"Invalid config value for 'ollama_url': {config.ollama_url!r} has a bad port.") from None
+    if host not in LOOPBACK_HOSTS:
+        raise ConfigError(
+            f"Invalid config value for 'ollama_url': host {host!r} is not local. "
+            f"Only {', '.join(LOOPBACK_HOSTS)} are allowed, so no remote or cloud service is ever called."
+        )
     if not config.model_name.strip():
         raise ConfigError("Invalid config value for 'model_name': it must not be empty.")
     if config.request_timeout_s <= 0:
@@ -117,6 +145,14 @@ def validate_config(config: AppConfig) -> AppConfig:
         raise ConfigError("Invalid config value for 'top_p': it must be between 0 and 1.")
     if config.num_ctx <= 0:
         raise ConfigError("Invalid config value for 'num_ctx': it must be greater than 0.")
+    if not _KEEP_ALIVE_RE.match(config.keep_alive):
+        raise ConfigError(
+            f"Invalid config value for 'keep_alive': {config.keep_alive!r}. Use a duration like 10m, 300s, 1h, 0 or -1."
+        )
+    if config.stream_read_timeout_s <= 0:
+        raise ConfigError("Invalid config value for 'stream_read_timeout_s': it must be greater than 0.")
+    if config.health_interval_s < 1:
+        raise ConfigError("Invalid config value for 'health_interval_s': it must be at least 1 second.")
     if config.log_level not in VALID_LOG_LEVELS:
         raise ConfigError(
             f"Invalid config value for 'log_level': {config.log_level!r}. "
@@ -156,6 +192,9 @@ def load_config(env: Mapping[str, str] | None = None) -> AppConfig:
         projects_dir=data_dir / "projects",
         export_dir=export_dir,
         log_level=env.get("LAA_LOG_LEVEL", "INFO").strip().upper(),
+        keep_alive=env.get("LAA_KEEP_ALIVE", "10m").strip(),
+        stream_read_timeout_s=_parse_float("stream_read_timeout_s", env.get("LAA_STREAM_READ_TIMEOUT_S", "300")),
+        health_interval_s=_parse_float("health_interval_s", env.get("LAA_HEALTH_INTERVAL_S", "10")),
     )
     return validate_config(config)
 

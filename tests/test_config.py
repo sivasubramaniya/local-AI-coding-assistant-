@@ -10,6 +10,7 @@ from app.config import (
     default_data_dir,
     ensure_directories,
     load_config,
+    model_options,
 )
 from app.errors import ConfigError
 
@@ -109,6 +110,14 @@ def test_no_warning_without_model_override(base_env, caplog):
         ("LAA_NUM_CTX", "8k", "num_ctx"),
         ("LAA_LOG_LEVEL", "WRONG", "log_level"),
         ("LAA_MODEL_NAME", "   ", "model_name"),
+        ("LAA_KEEP_ALIVE", "ten minutes", "keep_alive"),
+        ("LAA_STREAM_READ_TIMEOUT_S", "0", "stream_read_timeout_s"),
+        ("LAA_HEALTH_INTERVAL_S", "0.5", "health_interval_s"),
+        ("LAA_OLLAMA_URL", "http://192.168.1.50:11434", "ollama_url"),
+        ("LAA_OLLAMA_URL", "https://api.openai.com", "ollama_url"),
+        ("LAA_OLLAMA_URL", "http://ollama.example.com:11434", "ollama_url"),
+        ("LAA_OLLAMA_URL", "http://localhost.evil.com:11434", "ollama_url"),
+        ("LAA_OLLAMA_URL", "http://localhost:99999", "ollama_url"),
     ],
 )
 def test_invalid_values_raise_config_error_naming_field(base_env, var, value, field):
@@ -140,6 +149,27 @@ def test_ensure_directories_reports_failure(tmp_path):
     with pytest.raises(ConfigError) as info:
         ensure_directories(config)
     assert info.value.detail
+
+
+@pytest.mark.parametrize("url", ["http://localhost:11434", "http://127.0.0.1:11434", "http://[::1]:11434"])
+def test_loopback_urls_allowed(base_env, url):
+    assert load_config({**base_env, "LAA_OLLAMA_URL": url}).ollama_url == url
+
+
+def test_remote_url_message_explains_rule(base_env):
+    with pytest.raises(ConfigError) as info:
+        load_config({**base_env, "LAA_OLLAMA_URL": "http://10.0.0.5:11434"})
+    assert "not local" in str(info.value) and "no remote or cloud" in str(info.value)
+
+
+def test_phase4_defaults_and_overrides(base_env):
+    config = load_config(base_env)
+    assert (config.keep_alive, config.stream_read_timeout_s, config.health_interval_s) == ("10m", 300, 10)
+    assert config.model_base_name == "qwen2.5-coder-14b"
+    assert model_options(config) == {"temperature": 0.2, "top_p": 0.8, "num_ctx": 8192}
+    config = load_config({**base_env, "LAA_KEEP_ALIVE": "-1", "LAA_STREAM_READ_TIMEOUT_S": "600",
+                          "LAA_HEALTH_INTERVAL_S": "30"})
+    assert (config.keep_alive, config.stream_read_timeout_s, config.health_interval_s) == ("-1", 600, 30)
 
 
 def test_appconfig_is_dataclass():

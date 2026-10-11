@@ -84,6 +84,17 @@ class ChatView(QScrollArea):
     def add_error(self, message: str) -> ErrorCard:
         return self._add(ErrorCard(message))  # type: ignore[return-value]
 
+    def remove_items_after_last_user(self) -> int:
+        """Remove answers and error cards below the last user bubble (for regenerate/retry)."""
+        last_user = max((i for i, w in enumerate(self._items) if isinstance(w, UserBubble)), default=-1)
+        doomed = self._items[last_user + 1:]
+        for widget in doomed:
+            self.column_layout.removeWidget(widget)
+            widget.setParent(None)
+            widget.deleteLater()
+        del self._items[last_user + 1:]
+        return len(doomed)
+
     def clear(self) -> None:
         for widget in self._items:
             widget.setParent(None)

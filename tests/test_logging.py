@@ -55,6 +55,16 @@ def test_rotation_settings(config):
     assert file_handler.backupCount == BACKUP_COUNT == 5
 
 
+def test_http_library_logs_quiet_unless_debug(tmp_path):
+    base = {"LAA_DATA_DIR": str(tmp_path), "LAA_EXPORT_DIR": str(tmp_path)}
+    setup_logging(load_config(base))
+    assert logging.getLogger("httpx").level == logging.WARNING
+    setup_logging(load_config({**base, "LAA_LOG_LEVEL": "DEBUG"}))
+    assert logging.getLogger("httpx").level == logging.DEBUG
+    logging.getLogger("httpx").setLevel(logging.NOTSET)
+    logging.getLogger("httpcore").setLevel(logging.NOTSET)
+
+
 def test_level_applied(tmp_path):
     cfg = load_config({"LAA_DATA_DIR": str(tmp_path), "LAA_EXPORT_DIR": str(tmp_path), "LAA_LOG_LEVEL": "WARNING"})
     setup_logging(cfg)

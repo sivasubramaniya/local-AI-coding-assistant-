@@ -1,7 +1,8 @@
 import pytest
 from PySide6.QtCore import QObject, QTimer, Slot
 
-from app.ui.workers import FakeStreamWorker, StreamWorker, split_tokens, start_worker
+from app.errors import AppError
+from app.ui.workers import FakeStreamWorker, StreamWorker, live_worker_count, split_tokens, start_worker
 
 pytestmark = pytest.mark.gui
 
@@ -32,9 +33,10 @@ class Receiver(QObject):
     def on_finished(self, result):
         self.result = result
 
-    @Slot(str)
-    def on_error(self, message):
-        self.errors.append(message)
+    @Slot(object)
+    def on_error(self, error):
+        assert isinstance(error, AppError)
+        self.errors.append(error.message)
 
     @Slot()
     def on_cancelled(self):
@@ -86,8 +88,20 @@ def test_worker_error_is_reported(qtbot):
     receiver = Receiver(worker)
     handle = start_worker(worker)
     qtbot.waitUntil(lambda: receiver.done, timeout=5000)
-    assert receiver.errors == ["boom"]
+    assert receiver.errors == ["Something went wrong: boom"]
     assert handle.wait(2000)
+
+
+def test_finished_workers_are_released_exactly_once(qtbot):
+    before = live_worker_count()
+    receivers = []
+    for _ in range(5):
+        worker = FakeStreamWorker("a b c", delay_s=0.0)
+        receivers.append(Receiver(worker))
+        start_worker(worker)
+        del worker  # only the reaper keeps it alive now
+    qtbot.waitUntil(lambda: all(r.done for r in receivers), timeout=5000)
+    qtbot.waitUntil(lambda: live_worker_count() == before, timeout=5000)
 
 
 def test_ui_thread_stays_responsive_while_streaming(qtbot):

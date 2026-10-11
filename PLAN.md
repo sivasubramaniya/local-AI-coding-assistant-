@@ -57,15 +57,19 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 4 — Ollama Integration and Coding System Prompt  `[ ]`
+## Phase 4 — Ollama Integration and Coding System Prompt  `[~]`
 
-- [ ] `ollama_client.py`: health check, model check, chat, streaming
-- [ ] `coding_system_prompt.txt`: coding-only behavior, polite redirection of off-topic requests
-- [ ] System prompt applied to every model call
-- [ ] Streaming tokens to the UI through signals
-- [ ] Timeout, cancellation and clear error messages
-- [ ] No fallback to other models or cloud services
-- [ ] Unit tests with mocked HTTP responses; one integration test against the real model
+> Built and tested against mocks. PENDING until `qwen2.5-coder-14b:latest` exists:
+> run `python -m pytest -m integration -v` (3 tests), send a prompt in the real UI,
+> and redo the Phase 1 model checks (modelfile, timed request).
+
+- [x] `ollama_client.py`: health check, model check, chat, streaming
+- [x] `coding_system_prompt.txt`: coding-only behavior, polite redirection of off-topic requests
+- [x] System prompt applied to every model call
+- [x] Streaming tokens to the UI through signals
+- [x] Timeout, cancellation and clear error messages
+- [x] No fallback to other models or cloud services (loopback-only URL, exact model match)
+- [~] Unit tests with mocked HTTP responses (done); integration tests against the real model (written, skipped: model missing)
 
 **Deliverable:** working local coding chat.
 
@@ -187,3 +191,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-11 | 1 | Environment inspected (read-only). Blocked: no Ollama, no model, no Git, only Python 3.15 | none |
 | 2026-10-11 | 2 | Installed Python 3.12.10, Git, Ollama 0.40.2; venv + packages. Added config, errors, logging, system prompt, main.py, tests, git init | 54 passed |
 | 2026-10-11 | 3 | Native PySide6 UI: theme/QSS, SVG icons, sidebar, chat view, composer, preview panel (QTextBrowser HTML fallback), worker pattern, demo stream, `--screenshot` | 135 passed |
+| 2026-10-11 | 4 | Ollama client (httpx, streaming, abort), chat service (system prompt + trimming), health checks, real worker, `--demo`, loopback-only URL, Modelfile; fixed worker lifetime crash; QtWebEngine installed | 193 passed, 3 integration skipped (model missing) |

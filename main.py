@@ -3,6 +3,7 @@
 Usage:
     python main.py                       start the desktop application
     python main.py --check               print an environment summary and exit
+    python main.py --demo                start with canned demo answers (no model needed)
     python main.py --screenshot PATH     run a scripted demo, save a window capture, exit
         [--delay MS] [--no-preview]
 """
@@ -17,7 +18,7 @@ import sys
 from pathlib import Path
 
 from app.config import AppConfig, ensure_directories, load_config
-from app.errors import ConfigError
+from app.errors import AppError, ConfigError
 from app.logging_setup import setup_logging
 from app.prompts import load_system_prompt
 
@@ -35,11 +36,17 @@ def _check_summary(config: AppConfig, prompt: str) -> str:
         f"{name} {'OK' if importlib.util.find_spec(name) else 'MISSING'}" for name in RUNTIME_PACKAGES
     )
     webengine = "OK" if importlib.util.find_spec("PySide6.QtWebEngineWidgets") else "not installed (fallback preview)"
+    ollama_lines, warnings = _ollama_report(config)
     lines = [
         f"{config.app_name} - environment check",
         f"  Python        : {platform.python_version()} ({sys.executable})",
         f"  Model         : {config.model_name}",
-        f"  Ollama URL    : {config.ollama_url} (not contacted yet)",
+        f"  Ollama URL    : {config.ollama_url}",
+        *ollama_lines,
+        f"  Options       : temperature={config.temperature}, top_p={config.top_p}, "
+        f"num_ctx={config.num_ctx}, keep_alive={config.keep_alive}",
+        f"  Timeouts      : connect={config.connect_timeout_s:g}s, request={config.request_timeout_s:g}s, "
+        f"stream gap={config.stream_read_timeout_s:g}s, health every {config.health_interval_s:g}s",
         f"  Data dir      : {config.data_dir}",
         f"  Database      : {config.db_path}",
         f"  Logs dir      : {config.logs_dir}",
@@ -49,8 +56,37 @@ def _check_summary(config: AppConfig, prompt: str) -> str:
         f"  System prompt : loaded ({len(prompt)} characters)",
         f"  Packages      : {packages}",
         f"  QtWebEngine   : {webengine}",
+        *(f"WARNING: {w}" for w in warnings),
     ]
     return "\n".join(lines)
+
+
+def _ollama_report(config: AppConfig) -> tuple[list[str], list[str]]:
+    """Contact Ollama (only /api/version and /api/tags). Returns (lines, warnings)."""
+    from app.backend.ollama_client import OllamaClient, close_matches, create_command
+
+    lines: list[str] = []
+    warnings: list[str] = []
+    with OllamaClient(config) as client:
+        try:
+            lines.append(f"  Ollama        : running, version {client.get_version()}")
+            models = client.list_models()
+        except AppError as exc:
+            lines.append("  Ollama        : NOT REACHABLE")
+            warnings.append(exc.message)
+            return lines, warnings
+    present = config.model_name in models
+    lines.append(f"  Model present : {'yes (exact match)' if present else 'NO'}")
+    lines.append(f"  Installed     : {', '.join(models) or 'none'}")
+    if not present:
+        matches = close_matches(config.model_name, models)
+        if matches:
+            lines.append(f"  Similar       : {', '.join(matches)} (never used automatically)")
+        warnings.append(
+            f"Model {config.model_name} is not installed. "
+            f"Run this from the project folder: {create_command(config)}"
+        )
+    return lines, warnings
 
 
 def create_app(argv: list[str] | None = None):
@@ -71,11 +107,11 @@ def create_app(argv: list[str] | None = None):
     return app
 
 
-def run_gui(config: AppConfig) -> int:
+def run_gui(config: AppConfig, demo_mode: bool = False) -> int:
     from app.ui.main_window import MainWindow
 
     app = create_app()
-    window = MainWindow(config)
+    window = MainWindow(config, demo_mode=demo_mode)
     window.showMaximized()
     return app.exec()
 
@@ -88,7 +124,8 @@ def run_screenshot(config: AppConfig, path: Path, delay_ms: int, open_preview: b
     from app.ui.main_window import MainWindow
 
     app = create_app()
-    window = MainWindow(config, token_delay_s=0.004)
+    # screenshots are deterministic: demo answers, no Ollama health checks
+    window = MainWindow(config, token_delay_s=0.004, demo_mode=True, health_checks=False)
     window.resize(*SCREENSHOT_SIZE)
     window.show()
     window.new_chat()
@@ -123,6 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--screenshot", metavar="PATH", help="run a scripted demo and save a window capture")
     parser.add_argument("--delay", type=int, default=800, metavar="MS", help="wait before the capture (default 800)")
     parser.add_argument("--no-preview", action="store_true", help="capture with the preview panel closed")
+    parser.add_argument("--demo", action="store_true", help="use canned demo answers instead of the model")
     args = parser.parse_args(argv)
 
     try:
@@ -145,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_OK
     if args.screenshot:
         return run_screenshot(config, Path(args.screenshot), max(0, args.delay), not args.no_preview)
-    return run_gui(config)
+    return run_gui(config, demo_mode=args.demo)
 
 
 if __name__ == "__main__":

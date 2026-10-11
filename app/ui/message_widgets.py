@@ -24,7 +24,7 @@ from app.ui import theme
 from app.ui.icons import icon_size, load_icon
 from app.ui.markdown_render import COPY_SCHEME, render_markdown
 
-RENDER_INTERVAL_MS = 50  # batch streamed tokens; re-render at most ~20 times a second
+RENDER_INTERVAL_MS = 60  # batch streamed tokens; re-render markdown at most ~16 times a second
 
 FILE_TYPES = {
     ".html": "HTML", ".htm": "HTML", ".css": "CSS", ".js": "JavaScript", ".ts": "TypeScript",

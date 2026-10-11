@@ -23,6 +23,7 @@ ACCENT_USER_BUBBLE = "#1E4A8C"
 ACCENT_PRIMARY = "#2F6FE0"
 SUCCESS = "#3FB950"
 ERROR = "#F85149"
+WARNING = "#D29922"
 PREVIEW_BG_START = "#1E2A5A"
 PREVIEW_BG_END = "#4B3A9A"
 
@@ -53,6 +54,7 @@ COLORS: dict[str, str] = {
     "accent_primary": ACCENT_PRIMARY,
     "success": SUCCESS,
     "error": ERROR,
+    "warning": WARNING,
     "preview_bg_start": PREVIEW_BG_START,
     "preview_bg_end": PREVIEW_BG_END,
     "bg_button_round": BG_BUTTON_ROUND,

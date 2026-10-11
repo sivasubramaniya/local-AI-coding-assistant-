@@ -75,6 +75,15 @@ class InMemoryChatStore:
         self.get(chat_id)
         del self._chats[chat_id]
 
+    def remove_trailing_assistant(self, chat_id: str) -> int:
+        """Remove assistant messages after the last user message. Returns how many were removed."""
+        chat = self.get(chat_id)
+        removed = 0
+        while chat.messages and chat.messages[-1].role == "assistant":
+            chat.messages.pop()
+            removed += 1
+        return removed
+
     def add_message(self, chat_id: str, message: ChatMessage) -> ChatMessage:
         chat = self.get(chat_id)
         chat.messages.append(message)

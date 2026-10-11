@@ -144,7 +144,7 @@ class ModelStatusCard(QFrame):
         color = {
             ConnectionState.CONNECTED: theme.SUCCESS,
             ConnectionState.DISCONNECTED: theme.ERROR,
-            ConnectionState.MODEL_MISSING: theme.ERROR,
+            ConnectionState.MODEL_MISSING: theme.WARNING,
             ConnectionState.CHECKING: theme.TEXT_SECONDARY,
         }[state]
         self.dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
