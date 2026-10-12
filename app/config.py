@@ -44,6 +44,7 @@ class AppConfig:
     keep_alive: str = "10m"
     stream_read_timeout_s: float = 300.0
     health_interval_s: float = 10.0
+    command_timeout_s: float = 60.0
 
     @property
     def model_base_name(self) -> str:
@@ -153,6 +154,8 @@ def validate_config(config: AppConfig) -> AppConfig:
         raise ConfigError("Invalid config value for 'stream_read_timeout_s': it must be greater than 0.")
     if config.health_interval_s < 1:
         raise ConfigError("Invalid config value for 'health_interval_s': it must be at least 1 second.")
+    if not 1 <= config.command_timeout_s <= 3600:
+        raise ConfigError("Invalid config value for 'command_timeout_s': it must be between 1 and 3600 seconds.")
     if config.log_level not in VALID_LOG_LEVELS:
         raise ConfigError(
             f"Invalid config value for 'log_level': {config.log_level!r}. "
@@ -195,6 +198,7 @@ def load_config(env: Mapping[str, str] | None = None) -> AppConfig:
         keep_alive=env.get("LAA_KEEP_ALIVE", "10m").strip(),
         stream_read_timeout_s=_parse_float("stream_read_timeout_s", env.get("LAA_STREAM_READ_TIMEOUT_S", "300")),
         health_interval_s=_parse_float("health_interval_s", env.get("LAA_HEALTH_INTERVAL_S", "10")),
+        command_timeout_s=_parse_float("command_timeout_s", env.get("LAA_COMMAND_TIMEOUT_S", "60")),
     )
     return validate_config(config)
 

@@ -291,3 +291,19 @@ class GenerateWorker(_AgentWorker):
             return self.result
         finally:
             self._client.close()
+
+
+class ToolWorker(StreamWorker):
+    """Runs one already-approved, allowlisted command. Returns a CommandResult."""
+
+    def __init__(self, runner, argv: list[str]) -> None:
+        super().__init__()
+        self._runner = runner
+        self._argv = list(argv)
+
+    def cancel(self) -> None:
+        super().cancel()
+        self._runner.abort()
+
+    def work(self) -> object:
+        return self._runner.run(self._argv)

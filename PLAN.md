@@ -107,15 +107,15 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 7 — Security and Validation  `[ ]`
+## Phase 7 — Security and Validation  `[x]`
 
-- [ ] `path_validator.py`: reject absolute paths, `..`, drive letters, symlink escapes
-- [ ] Writes restricted to the approved project directory
-- [ ] Overwrite confirmation
-- [ ] `project_validator.py`: expected structure checks
-- [ ] `tool_runner.py`: executable and argument allowlist, timeouts, captured output and exit codes
-- [ ] Approval dialog for risky operations
-- [ ] Security-focused tests (traversal attempts, disallowed commands, timeouts)
+- [x] `path_validator.py`: rejects absolute, drive, UNC, `..`, reserved names, illegal chars, long paths, symlink/junction escapes
+- [x] Writes restricted to the approved project directory (generator writer, edit apply, backups)
+- [x] Overwrite confirmation (edits only after Apply on the Changes card; generator never overwrites)
+- [x] `project_validator.py`: expected files exist, no empty files, README present (shown after generation)
+- [x] `tool_runner.py`: program + argument allowlist, `shell=False`, cwd = project root, timeout with process-tree kill, captured stdout/stderr/exit code, truncation, Stop
+- [x] Approval dialog shows the exact command and working directory; refused commands never reach it
+- [x] Security tests: 45 malicious paths (x2), junction escape, 47 allowlist bypass attempts, 12 shell-syntax strings, timeout tree kill, UI reject flow
 
 **Deliverable:** controlled file-generation and command-execution workflow.
 
@@ -201,3 +201,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-12 | 1+4 | Real-model verification: `ollama create qwen2.5-coder-14b -f .\ollama\Modelfile`, modelfile inspected, timed request (2.7 tok/s), integration tests | 3 integration passed (REAL) |
 | 2026-10-12 | 5 | SQLite chat history (stdlib sqlite3): schema v1, migrations, corrupt/newer DB handling, ChatStore protocol, restart restore, feedback, `--check` DB report; fixed stale worker signal ending the next stream | 252 passed (MOCK), 3 integration deselected |
 | 2026-10-12 | 6 | Coding agent: task classifier, two-step project generator (plan JSON + per-file blocks, retry), plan/changes cards, edit flow with diffs and backups, project context for debug/refactor, path validator, DB migration v2 (message_files) | 333 passed (MOCK); real generator test: see Phase 7 row |
+| 2026-10-12 | 7 | Security: path validator hardening + attack suite, project validator, allowlisted tool runner (shell=False, timeouts, tree kill), approval flow + Run project tests; config `command_timeout_s`. Phase 6 real generator integration test passed (4.1 min) | 536 passed, 1 skipped (symlink privilege) (MOCK); 1 integration passed (REAL) |

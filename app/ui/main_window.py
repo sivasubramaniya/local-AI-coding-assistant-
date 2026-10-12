@@ -37,6 +37,13 @@ from app.agent.coding_agent import (
     read_project_files,
 )
 from app.agent.project_generator import GenerationResult, ProjectPlan, ProjectWriter
+from app.agent.tool_runner import (
+    CommandResult,
+    ToolRunner,
+    default_test_command,
+    display_command,
+    result_markdown,
+)
 from app.backend.chat_service import ChatService
 from app.backend.chat_store import (
     FEEDBACK_BAD,
@@ -51,9 +58,16 @@ from app.backend.ollama_client import OllamaClient, StreamStats
 from app.backend.status import ConnectionState, HealthResult, stub_connection_state
 from app.config import AppConfig
 from app.backend.task_classifier import TaskType, classify
-from app.errors import AppError, ModelNotFoundError, OllamaUnavailableError, ResponseFormatError
+from app.errors import (
+    AppError,
+    CommandRejectedError,
+    ModelNotFoundError,
+    OllamaUnavailableError,
+    ResponseFormatError,
+)
 from app.ui import demo, theme
 from app.ui.agent_widgets import ChangesCard, PlanCard
+from app.ui.dialogs import CommandApprovalDialog
 from app.ui.chat_view import ChatView
 from app.ui.composer import Composer
 from app.ui.icons import icon_size, load_icon
@@ -67,9 +81,11 @@ from app.ui.workers import (
     OllamaStreamWorker,
     PlanWorker,
     StreamWorker,
+    ToolWorker,
     WorkerHandle,
     start_worker,
 )
+from app.validation.project_validator import validate_project
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +101,8 @@ CLOSE_WAIT_MS = 6000
 DELETE_CONFIRM = "Delete this chat? This cannot be undone."
 STATUS_PLANNING = "Planning project…"
 STATUS_PLAN_READY = "Project plan · review it, then click Generate files"
-JOB_CHAT, JOB_PLAN, JOB_GENERATE = "chat", "plan", "generate"
+JOB_CHAT, JOB_PLAN, JOB_GENERATE, JOB_TOOL = "chat", "plan", "generate", "tool"
+STATUS_RUNNING = "Running command…"
 PREVIEW_MAX_CHARS = 2_000_000
 
 
@@ -154,6 +171,9 @@ class MainWindow(QMainWindow):
         self._active_plan: ProjectPlan | None = None
         self._active_writer_root: Path | None = None
         self.plan_cards: list[PlanCard] = []
+        self.command_results: list[CommandResult] = []
+        # Asks the user to approve a command (command text, working dir) -> bool. Tests replace it.
+        self.approver: Callable[[str, str], bool] = self._ask_approval
         self.changes_cards: list[ChangesCard] = []
         self._current_chat_id: str | None = None
         self._expanded = False
@@ -232,6 +252,7 @@ class MainWindow(QMainWindow):
         self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         more = QMenu(self.more_button)
         self.rename_action = more.addAction("Rename chat", self._rename_current)
+        self.run_tests_action = more.addAction("Run project tests", self.run_project_tests)
         self.export_zip_action = more.addAction("Export ZIP", self._export_pending)
         more.addSeparator()
         self.delete_action = more.addAction("Delete chat", self._delete_current)
@@ -772,6 +793,8 @@ class MainWindow(QMainWindow):
             self._plan_finished(result)
         elif self._job_kind == JOB_GENERATE:
             self._generation_finished(result)
+        elif self._job_kind == JOB_TOOL:
+            self._tool_finished(result)
         else:
             self._chat_finished(result)
         self.streamFinished.emit()
@@ -827,7 +850,8 @@ class MainWindow(QMainWindow):
         project = self._active_project
         card = self._active_plan_card
         self._end_stream()
-        text = result.summary_markdown()
+        report = validate_project(result.root, result.written)
+        text = f"{result.summary_markdown()}\n\n{report.summary()}"
         if message is not None:
             message.set_text(text)
             for path in result.written:
@@ -849,6 +873,78 @@ class MainWindow(QMainWindow):
         self._refresh_projects()
         if result.written and chat_id == self._current_chat_id:
             self.open_file(result.written[0])
+
+    # --- approved commands -------------------------------------------------------------
+    def _ask_approval(self, command: str, working_dir: str) -> bool:
+        dialog = CommandApprovalDialog(command, working_dir, "The command runs on your computer inside the "
+                                       "project folder. Review it before approving.", self)
+        return dialog.exec() == CommandApprovalDialog.DialogCode.Accepted
+
+    def _command_refused(self, text: str) -> None:
+        card = self.chat_view.add_error(text)
+        card.retry_button.hide()
+
+    def run_project_command(self, argv: list[str]) -> bool:
+        """Allowlist check, then the user's approval, then run in a worker. Never runs model text."""
+        chat_id = self._current_chat_id
+        if self.is_busy() or chat_id is None:
+            return False
+        try:
+            project = self.store.latest_project_for_chat(chat_id)
+        except AppError as exc:
+            self._storage_failed(exc)
+            return False
+        if project is None:
+            self.show_toast("This chat has no project to run commands in.")
+            return False
+        try:
+            runner = ToolRunner(Path(project.path), self.config.command_timeout_s)
+            checked = runner.check(argv)  # refused here even if the user would approve it
+            runner.resolve_executable(checked[0])
+        except AppError as exc:
+            logger.warning("Command refused: %s", exc.full_text())
+            self._command_refused(exc.message)
+            return False
+        command = display_command(checked)
+        if not self.approver(command, str(runner.root)):
+            self._command_refused(CommandRejectedError(f"You rejected the command, so it was not run: {command}").message)
+            return False
+        worker = ToolWorker(runner, checked)
+        self._begin_stream(chat_id, worker, f"{STATUS_RUNNING} {command}", JOB_TOOL)
+        return True
+
+    def run_project_tests(self) -> bool:
+        chat_id = self._current_chat_id
+        try:
+            project = self.store.latest_project_for_chat(chat_id) if chat_id else None
+        except AppError as exc:
+            self._storage_failed(exc)
+            return False
+        if project is None:
+            self.show_toast("This chat has no project to test.")
+            return False
+        argv = default_test_command(Path(project.path))
+        if argv is None:
+            self.show_toast("No tests were found in this project.")
+            return False
+        return self.run_project_command(argv)
+
+    def _tool_finished(self, result: object) -> None:
+        chat_id = self._active_chat_id
+        message = self._active_message
+        self._end_stream()
+        if not isinstance(result, CommandResult):
+            return
+        self.command_results.append(result)
+        text = result_markdown(result)
+        status = "Command passed" if result.ok else "Command failed"
+        if message is not None:
+            message.set_text(text)
+            message.finish(status=status)
+        if chat_id:
+            saved = self._save_reply(chat_id, text, "complete" if result.ok else "error")
+            if saved is not None and message is not None:
+                message.message_id = saved.id
 
     def _offer_changes(self, chat_id: str, answer: str) -> None:
         """If the answer proposes edits to the chat's project, show them as a Changes card."""
@@ -905,6 +1001,8 @@ class MainWindow(QMainWindow):
         if message is not None:
             if self._job_kind == JOB_PLAN:
                 message.set_text(message.text() or "Planning was stopped.")
+            elif self._job_kind == JOB_TOOL:
+                message.set_text("The command was stopped. Its process tree was ended.")
             message.finish(status=STATUS_STOPPED)
             if self._active_chat_id:
                 saved = self._save_reply(self._active_chat_id, message.text(), "stopped")
