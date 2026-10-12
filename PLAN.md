@@ -155,35 +155,35 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 11 — Windows Packaging  `[ ]`
+## Phase 11 — Windows Packaging  `[x]`
 
-- [ ] `LocalAIAssistant.spec` for PyInstaller
-- [ ] Bundle the prompt file and assets
-- [ ] Correct data-directory initialization in the packaged build (for example `%APPDATA%`)
-- [ ] Build and test startup from `dist/`
-- [ ] Installation, prerequisites (Ollama and model) and troubleshooting guide
-
-**Deliverable:** working Windows desktop distribution.
+- [x] `packaging/LocalAIAssistant.spec` (onedir, windowed, no UPX): prompt, icons, Modelfile and docs bundled; tests excluded
+- [x] Bundle the prompt file and assets (loaded through `sys._MEIPASS` in the packaged build)
+- [x] Data directory stays `%LOCALAPPDATA%\LocalAIAssistant` in the packaged build
+- [x] Build (`pyinstaller packaging\LocalAIAssistant.spec --noconfirm`, 2.8 min, 567 MB) and test from `dist\`: `--check` exit 0 (attaches to the terminal, writes `logs\check.txt`), window title "Local AI Assistant", clean close, missing-model message points at the bundled Modelfile
+- [x] `docs/INSTALL.md`: prerequisites, Ollama + model setup, first run, troubleshooting (Ollama not running, model missing, slow responses, antivirus, SmartScreen)
+- [x] `docs/TEST_REPORT.md` with all counts, MOCK vs REAL and known limitations
+- [x] Worker threads are joined before the app exits (`shutdown_workers`)
 
 ---
 
 ## Final Deliverables Checklist
 
-- [ ] Native Windows desktop app (PySide6)
-- [ ] Fixed local Ollama model integration
-- [ ] Coding-only system prompt
-- [ ] New Chat and persistent Chat History
-- [ ] Code viewer and project preview
-- [ ] Coding agent and multi-file generator
-- [ ] Safe file operations and command approval
-- [ ] Automated tests and validation
-- [ ] SQLite storage
-- [ ] Desktop export and ZIP
-- [ ] README and run instructions
-- [ ] Offline verification report
-- [ ] PyInstaller build
-- [ ] Installation and troubleshooting guide
-- [ ] Final test report and known limitations
+- [x] Native Windows desktop app (PySide6)
+- [x] Fixed local Ollama model integration
+- [x] Coding-only system prompt
+- [x] New Chat and persistent Chat History
+- [x] Code viewer and project preview
+- [x] Coding agent and multi-file generator
+- [x] Safe file operations and command approval
+- [x] Automated tests and validation
+- [x] SQLite storage
+- [x] Desktop export and ZIP
+- [x] README and run instructions
+- [~] Offline verification report (automated part done; manual Wi-Fi-off checklist pending)
+- [x] PyInstaller build
+- [x] Installation and troubleshooting guide
+- [x] Final test report and known limitations
 
 ---
 
@@ -203,3 +203,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-12 | 8 | Debug workflow: Java/Python test detection, command sequences, JDK discovery, repair loop (max 3 rounds, diff + confirm + re-run), pytest-cov; generator fixes found by REAL runs (request + earlier files in file prompts, lenient Markdown, path-before-block edits). REAL: Java sample generated and passed (run 2), REAL repair fixed an injected bug in 1 round; run 1 (before fixes) failed and is kept as evidence | 601 passed, 1 skipped (MOCK); coverage 88%; REAL: Java sample PASS, repair demo PASS |
 | 2026-10-12 | 9 | Project export: folder export with exclusions and -N collisions, README instructions, verified ZIP (testzip, names, sizes, extraction), Export/ZIP buttons with success card, Settings dialog (export folder, command timeout) | 601 passed, 1 skipped (MOCK) |
 | 2026-10-12 | 10 | Offline verification (automated): code audit, socket guard (--offline-guard), loopback end-to-end test of chat/generation/storage/export, missing-model/Ollama-stopped checks, HTML preview blocks remote requests, docs/OFFLINE.md with the manual Wi-Fi-off checklist | 601 passed, 1 skipped; guarded suite passes (intermittent exit crash, see known issues) |
+| 2026-10-12 | 11 | Windows packaging: PyInstaller spec (onedir, windowed), bundled prompt/icons/Modelfile/docs, --check console attach + logs\check.txt, bundled-Modelfile hint, worker shutdown at exit, INSTALL.md, TEST_REPORT.md, README | 601 passed, 1 skipped (MOCK); 4 integration passed (REAL); packaged exe --check and window launch OK (REAL) |

@@ -125,3 +125,9 @@ def test_open_history_store_choices(tmp_config):
     assert isinstance(memory, InMemoryChatStore) and seen == [False]
     assert db.read_bytes() == before
     assert entry.open_history_store(tmp_config, lambda m, fresh: "quit") is None
+
+
+def test_attach_console_is_a_no_op_from_source():
+    import main as entry
+
+    assert entry.attach_parent_console() is False

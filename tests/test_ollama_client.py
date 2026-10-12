@@ -219,3 +219,16 @@ def test_abort_unblocks_a_stalled_stream_and_keeps_client_usable(tmp_path):
         # abort closed only the stream response: other requests still work on this client
         assert client.ensure_ready() == "0.40.2"
         client.close()
+
+
+def test_packaged_build_points_at_bundled_modelfile(tmp_path, monkeypatch):
+    import sys
+
+    from app.backend.ollama_client import create_hint
+
+    cfg = load_config({"LAA_DATA_DIR": str(tmp_path), "LAA_EXPORT_DIR": str(tmp_path)})
+    assert create_hint(cfg) == f"Run this from the project folder: {CREATE_CMD}"
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", r"C:\Apps\LocalAIAssistant\_internal", raising=False)
+    assert create_hint(cfg) == ('Run this in PowerShell: ollama create qwen2.5-coder-14b -f '
+                                '"C:\Apps\LocalAIAssistant\_internal\docs\Modelfile"')

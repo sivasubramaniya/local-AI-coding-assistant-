@@ -80,7 +80,7 @@ def _database_report(config: AppConfig) -> list[str]:
 
 def _ollama_report(config: AppConfig) -> tuple[list[str], list[str]]:
     """Contact Ollama (only /api/version and /api/tags). Returns (lines, warnings)."""
-    from app.backend.ollama_client import OllamaClient, close_matches, create_command
+    from app.backend.ollama_client import OllamaClient, close_matches, create_hint
 
     lines: list[str] = []
     warnings: list[str] = []
@@ -100,10 +100,22 @@ def _ollama_report(config: AppConfig) -> tuple[list[str], list[str]]:
         if matches:
             lines.append(f"  Similar       : {', '.join(matches)} (never used automatically)")
         warnings.append(
-            f"Model {config.model_name} is not installed. "
-            f"Run this from the project folder: {create_command(config)}"
+            f"Model {config.model_name} is not installed. " + create_hint(config)
         )
     return lines, warnings
+
+
+def attach_parent_console() -> bool:
+    """Packaged (windowed) build: print to the terminal that started us, if any."""
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return False
+    import ctypes
+
+    if not ctypes.windll.kernel32.AttachConsole(-1):  # ATTACH_PARENT_PROCESS
+        return False
+    sys.stdout = open("CONOUT$", "w", encoding="utf-8", errors="replace")  # noqa: SIM115
+    sys.stderr = open("CONOUT$", "w", encoding="utf-8", errors="replace")  # noqa: SIM115
+    return True
 
 
 def create_app(argv: list[str] | None = None):
@@ -167,6 +179,9 @@ def run_gui(config: AppConfig, demo_mode: bool = False) -> int:
     try:
         return app.exec()
     finally:
+        from app.ui.workers import shutdown_workers
+
+        shutdown_workers()  # no QThread may outlive the application object
         store.close()
 
 
@@ -217,6 +232,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--demo", action="store_true", help="use canned demo answers instead of the model")
     args = parser.parse_args(argv)
 
+    if getattr(sys, "frozen", False):
+        attach_parent_console()  # so configuration errors are visible when started from a terminal
     try:
         config = load_config()
         ensure_directories(config)
@@ -233,7 +250,12 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.check:
-        print(_check_summary(config, prompt))
+        summary = _check_summary(config, prompt)
+        if getattr(sys, "frozen", False):
+            # the windowed exe has no console of its own: attach to the caller's and keep a copy
+            attach_parent_console()
+            (config.logs_dir / "check.txt").write_text(summary + "\n", encoding="utf-8")
+        print(summary)
         return EXIT_OK
     if args.screenshot:
         return run_screenshot(config, Path(args.screenshot), max(0, args.delay), not args.no_preview)

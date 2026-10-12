@@ -12,6 +12,7 @@ from __future__ import annotations
 import difflib
 import json
 import logging
+import sys
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -26,9 +27,22 @@ logger = logging.getLogger(__name__)
 MODELFILE_PATH = r".\ollama\Modelfile"
 
 
+def modelfile_path() -> str:
+    """The Modelfile to use: the bundled copy in a packaged build, else the project's ollama folder."""
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if getattr(sys, "frozen", False) and bundle_root:
+        return f'"{bundle_root}\\docs\\Modelfile"'
+    return MODELFILE_PATH
+
+
 def create_command(config: AppConfig) -> str:
-    """The command that creates the configured model name from ollama/Modelfile."""
-    return f"ollama create {config.model_base_name} -f {MODELFILE_PATH}"
+    """The command that creates the configured model name from the Modelfile."""
+    return f"ollama create {config.model_base_name} -f {modelfile_path()}"
+
+
+def create_hint(config: AppConfig) -> str:
+    where = "in PowerShell" if getattr(sys, "frozen", False) else "from the project folder"
+    return f"Run this {where}: {create_command(config)}"
 
 
 @dataclass(frozen=True)
@@ -156,7 +170,7 @@ class OllamaClient:
         parts = [f"Model {name} is not installed in Ollama."]
         if matches:
             parts.append(f"Similar installed models: {', '.join(matches)} (not used automatically).")
-        parts.append(f"Run this from the project folder: {create_command(self.config)}")
+        parts.append(create_hint(self.config))
         return ModelNotFoundError(" ".join(parts), detail=f"installed: {', '.join(available) or 'none'}")
 
     def _check_status(self, response: httpx.Response) -> None:
