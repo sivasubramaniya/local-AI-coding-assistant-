@@ -3,7 +3,7 @@
 A native Windows 11 desktop coding assistant built with Python and PySide6. It talks only to a
 local Ollama model (`qwen2.5-coder-14b:latest`) and works fully offline once installed.
 
-Status: Phase 5 (local Ollama chat with persistent SQLite chat history at `%LOCALAPPDATA%ocalaiassistantssistant.db`). `--demo` and screenshot mode never touch the database.
+Status: Phase 5 (local Ollama chat with persistent SQLite chat history at `%LOCALAPPDATA%\LocalAIAssistant\assistant.db`). `--demo` and screenshot mode never touch the database.
 
 ## Prerequisites
 
