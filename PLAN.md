@@ -7,9 +7,11 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 1 — Environment Inspection and Model Verification  `[!]`
+## Phase 1 — Environment Inspection and Model Verification  `[x]`
 
-> Model checks pending (download); must be re-verified before Phase 4.
+> Model checks done 2026-10-12: `qwen2.5-coder-14b:latest` created from `ollama/Modelfile`
+> (FROM qwen2.5-coder:14b, temperature 0.2, top_p 0.8, num_ctx 8192). Timed request: 40.0 s load,
+> 17 tokens at 2.7 tok/s, 75.4 s wall (cold start; slow hardware path).
 
 **Goal:** Know exactly what exists before building anything. Read-only phase.
 
@@ -17,9 +19,9 @@ stop at every phase boundary and wait for approval.
 - [x] Check Python, pip, Git and Ollama versions
 - [x] Check for PySide6, pytest, PyInstaller (report only, do not install)
 - [x] Confirm the Ollama service responds on port 11434 (after install in Phase 2: v0.40.2)
-- [!] Confirm the exact model `qwen2.5-coder-14b:latest` exists (`ollama list`)
-- [!] Inspect model parameters (`ollama show --modelfile`)
-- [!] Send one small coding request and time it
+- [x] Confirm the exact model `qwen2.5-coder-14b:latest` exists (`ollama list`)
+- [x] Inspect model parameters (`ollama show --modelfile`)
+- [x] Send one small coding request and time it
 - [x] Report RAM and GPU
 - [x] Write the Phase 1 report: blockers, warnings, Phase 2 plan
 
@@ -57,11 +59,10 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 4 — Ollama Integration and Coding System Prompt  `[~]`
+## Phase 4 — Ollama Integration and Coding System Prompt  `[x]`
 
-> Built and tested against mocks. PENDING until `qwen2.5-coder-14b:latest` exists:
-> run `python -m pytest -m integration -v` (3 tests), send a prompt in the real UI,
-> and redo the Phase 1 model checks (modelfile, timed request).
+> Verified against the real model 2026-10-12: `python -m pytest -m integration -v` → 3 passed
+> (ensure_ready, is_prime parses, off-topic redirect). Manual UI prompt still to be tried by the owner.
 
 - [x] `ollama_client.py`: health check, model check, chat, streaming
 - [x] `coding_system_prompt.txt`: coding-only behavior, polite redirection of off-topic requests
@@ -69,7 +70,7 @@ stop at every phase boundary and wait for approval.
 - [x] Streaming tokens to the UI through signals
 - [x] Timeout, cancellation and clear error messages
 - [x] No fallback to other models or cloud services (loopback-only URL, exact model match)
-- [~] Unit tests with mocked HTTP responses (done); integration tests against the real model (written, skipped: model missing)
+- [x] Unit tests with mocked HTTP responses; integration tests against the real model (3 passed)
 
 **Deliverable:** working local coding chat.
 
@@ -192,3 +193,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-11 | 2 | Installed Python 3.12.10, Git, Ollama 0.40.2; venv + packages. Added config, errors, logging, system prompt, main.py, tests, git init | 54 passed |
 | 2026-10-11 | 3 | Native PySide6 UI: theme/QSS, SVG icons, sidebar, chat view, composer, preview panel (QTextBrowser HTML fallback), worker pattern, demo stream, `--screenshot` | 135 passed |
 | 2026-10-11 | 4 | Ollama client (httpx, streaming, abort), chat service (system prompt + trimming), health checks, real worker, `--demo`, loopback-only URL, Modelfile; fixed worker lifetime crash; QtWebEngine installed | 193 passed, 3 integration skipped (model missing) |
+| 2026-10-12 | 1+4 | Real-model verification: `ollama create qwen2.5-coder-14b -f .\ollama\Modelfile`, modelfile inspected, timed request (2.7 tok/s), integration tests | 3 integration passed (REAL) |
