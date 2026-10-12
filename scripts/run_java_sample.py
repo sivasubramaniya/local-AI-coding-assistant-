@@ -15,6 +15,7 @@ Model output is never executed as a command.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
 import time
@@ -59,7 +60,17 @@ REQUEST = (
 MAX_ROUNDS = 3
 
 
+def portable(text: str) -> str:
+    """Replace the user's own folders with %LOCALAPPDATA% / ~ so reports carry no personal paths."""
+    for env, label in (("LOCALAPPDATA", "%LOCALAPPDATA%"), ("USERPROFILE", "~")):
+        value = os.environ.get(env)
+        if value:
+            text = text.replace(value, label)
+    return text
+
+
 def log(lines: list[str], text: str) -> None:
+    text = portable(text)
     print(text, flush=True)
     lines.append(text)
 
@@ -128,7 +139,7 @@ def main() -> int:
             ok = all(r.ok for r in results) and len(results) == len(commands)
             label = "initial run" if round_no == 0 else f"after repair round {round_no}"
             log(report, f"\n## Checks {label}: {'PASSED' if ok else 'FAILED'} (REAL javac/java)\n")
-            report.append(results_markdown(results, len(commands)))
+            report.append(portable(results_markdown(results, len(commands))))
             if ok or round_no == MAX_ROUNDS:
                 break
             budget = 9000

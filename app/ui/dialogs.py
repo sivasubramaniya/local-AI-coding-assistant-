@@ -96,8 +96,11 @@ def ask_storage_recovery(message: str, offer_fresh: bool, parent: QWidget | None
 class SettingsDialog(QDialog):
     """Export folder, command timeout and a theme placeholder. Values are saved by the caller."""
 
-    def __init__(self, export_dir: str, command_timeout_s: float, parent: QWidget | None = None) -> None:
+    def __init__(self, export_dir: str, command_timeout_s: float, parent: QWidget | None = None,
+                 model_name: str = "") -> None:
         from PySide6.QtWidgets import QComboBox, QFileDialog, QFormLayout, QLineEdit, QSpinBox
+
+        from app.__version__ import __version__
 
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -127,6 +130,13 @@ class SettingsDialog(QDialog):
         self.theme_combo.model().item(1).setEnabled(False)
         form.addRow("Theme", self.theme_combo)
         layout.addLayout(form)
+        about = f"About: Local AI Assistant {__version__}"
+        if model_name:
+            about += f" · local model {model_name} · runs offline"
+        self.about_label = self._label(about)
+        self.about_label.setWordWrap(True)
+        layout.addSpacing(6)
+        layout.addWidget(self.about_label)
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         cancel = QPushButton("Cancel")
@@ -144,6 +154,12 @@ class SettingsDialog(QDialog):
         chosen = file_dialog.getExistingDirectory(self, "Export folder", self.export_edit.text())
         if chosen:
             self.export_edit.setText(chosen)
+
+    @staticmethod
+    def _label(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("dialogLabel")
+        return label
 
     def values(self) -> tuple[str, int]:
         return self.export_edit.text().strip(), self.timeout_spin.value()

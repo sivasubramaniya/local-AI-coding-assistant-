@@ -1,4 +1,4 @@
-# Final Test Report — Local AI Assistant
+# Final Test Report — Local AI Assistant 1.0.0
 
 Date: 2026-10-12 · Windows 11 Home 10.0.26300 · Python 3.12.10 · Ollama 0.40.2 ·
 model `qwen2.5-coder-14b:latest` (from `qwen2.5-coder:14b`, runs about 79% CPU / 21% GPU, ~3 tok/s) ·
@@ -11,9 +11,9 @@ server). **REAL** = the real local model and/or real compilers and processes.
 
 | Suite | Command | Result | Kind |
 |---|---|---|---|
-| Unit + GUI (offscreen) | `python -m pytest -v` | **601 passed, 1 skipped**, 4 deselected (integration) | MOCK model; real SQLite, files, subprocesses (python, javac, java) |
+| Unit + GUI (offscreen) | `python -m pytest -v` | **611 passed, 1 skipped**, 9 deselected (integration) | MOCK model; real SQLite, files, subprocesses (python, javac, java) |
 | Same, network blocked | `python -m pytest --offline-guard` | **601 passed, 1 skipped** | MOCK model, loopback sockets only |
-| Integration | `python -m pytest -m integration -v` | **4 passed** in 3.3 min | REAL model |
+| Integration | `python -m pytest -m integration -v` | **9 passed** in 25.3 min | REAL model |
 | Coverage | `python -m pytest --cov=app --cov=main` | **88%** of app code | — |
 | Compile | `python -m compileall -q app main.py scripts` | exit 0 | — |
 | Java sample (generate → compile → test) | `scripts/run_java_sample.py` | run 2: 4/4 files, `javac` + plain test class **PASSED** (9.0 min) | REAL model + REAL JDK |
@@ -22,6 +22,27 @@ server). **REAL** = the real local model and/or real compilers and processes.
 
 The one skip: `tests/test_validation.py::test_symlink_escape_is_rejected` — creating a symlink needs
 Developer Mode or admin rights on this machine. The junction-escape test (no privilege needed) ran and passed.
+
+## Release 1.0.0 verification (Phase 12, 2026-10-12)
+
+| Check | Result | Kind |
+|---|---|---|
+| `python -m compileall -q app main.py scripts` | exit 0 | — |
+| `python -m pytest -v` | **611 passed, 1 skipped**, 9 deselected (integration) | MOCK model |
+| `python -m pytest -m integration -v` | **9 passed** in 25.3 min | REAL model |
+| Real-app end-to-end test (`tests/test_integration_app.py`, 5 steps) | 5/5 passed (3 consecutive clean runs after fixes) | REAL model, real UI (offscreen), real files/processes |
+| — chat | streamed answer, highlighted code block that parses with `ast` | REAL |
+| — stop | partial answer kept, marked stopped, Send restored | REAL |
+| — project mode | plan card → generated to-do CLI → preview → "Project check passed" → pytest; the repair loop fixed a failing generated test in **1 round** | REAL |
+| — export | ZIP created and verified | REAL |
+| — restart | chats, project, file cards and preview restored | REAL |
+| Packaged exe (`dist\LocalAIAssistant\LocalAIAssistant.exe --check`) | exit 0, version 1.0.0, model present; window opens; WebEngine preview renders; missing-model hint correct | REAL |
+| Package size | 567 MB / 3,109 files → **322 MB / 137 files** | — |
+
+Bugs found by the REAL app test and fixed, each with a regression test: replies replaced earlier
+replies (test results deleted the generation summary and its file cards); the action row was painted
+over the last lines of a finished answer; the plan file list and generation summary rendered as
+run-on paragraphs; 4-backtick fences showed a stray backtick label; the export toast stayed visible.
 
 ## REAL model results
 
@@ -72,7 +93,7 @@ before the block" (the format the system prompt asks for) are recognised.
    be tried by the owner.
 5. `main.py` and `app/ui/workers.py` show low coverage because they run in subprocesses / QThreads, which
    coverage does not trace; both are exercised by tests.
-6. The packaged app is ~567 MB (QtWebEngine) and not code-signed (SmartScreen warning; see `docs/INSTALL.md`).
+6. The packaged app is ~322 MB (QtWebEngine; it was 567 MB before the Phase 12 size reduction) and not code-signed (SmartScreen warning; see `docs/INSTALL.md`).
 7. Running Python projects from the packaged app uses the `python` found on PATH (the app has no
    separate interpreter for user projects).
 8. Error replies that had partial text are restored after a restart as the error card only.

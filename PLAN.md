@@ -167,6 +167,17 @@ stop at every phase boundary and wait for approval.
 
 ---
 
+## Phase 12 — Polish and Release  `[x]`
+
+- [x] Performance trials (REAL): num_ctx 4096 and flash attention + q8_0 KV cache vs the 8192 baseline; none reliably faster, defaults kept (`docs/PERFORMANCE.md`)
+- [x] REAL end-to-end app test (`tests/test_integration_app.py`): chat, stop, project mode with tests/repair, ZIP export, restart; screenshots in `docs/screenshots/`
+- [x] Fixed the bugs it found (reply replacement, action-row overlap, Markdown paragraphs, fence labels, export toast, offscreen fonts) with regression tests
+- [x] Smaller build: only the Qt modules the app loads (567 MB → 322 MB), WebEngine preview verified in the exe
+- [x] Release prep: `.gitignore` proven with `git check-ignore`, tracked files scanned (no secrets, no files > 5 MB, personal paths removed from sample reports)
+- [x] Version 1.0.0 in `--check`, `--version` and Settings/About; README, CHANGELOG, MIT LICENSE
+
+---
+
 ## Final Deliverables Checklist
 
 - [x] Native Windows desktop app (PySide6)
@@ -204,3 +215,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-12 | 9 | Project export: folder export with exclusions and -N collisions, README instructions, verified ZIP (testzip, names, sizes, extraction), Export/ZIP buttons with success card, Settings dialog (export folder, command timeout) | 601 passed, 1 skipped (MOCK) |
 | 2026-10-12 | 10 | Offline verification (automated): code audit, socket guard (--offline-guard), loopback end-to-end test of chat/generation/storage/export, missing-model/Ollama-stopped checks, HTML preview blocks remote requests, docs/OFFLINE.md with the manual Wi-Fi-off checklist | 601 passed, 1 skipped; guarded suite passes (intermittent exit crash, see known issues) |
 | 2026-10-12 | 11 | Windows packaging: PyInstaller spec (onedir, windowed), bundled prompt/icons/Modelfile/docs, --check console attach + logs\check.txt, bundled-Modelfile hint, worker shutdown at exit, INSTALL.md, TEST_REPORT.md, README | 601 passed, 1 skipped (MOCK); 4 integration passed (REAL); packaged exe --check and window launch OK (REAL) |
+| 2026-10-12 | 12 | Polish and release 1.0.0: performance trials (nothing kept), REAL end-to-end app test + 6 fixes, build 567 → 322 MB, gitignore/secret scan, version 1.0.0, README/CHANGELOG/LICENSE | 611 passed, 1 skipped (MOCK); 9 integration passed (REAL); exe --check OK |

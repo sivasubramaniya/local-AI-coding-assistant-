@@ -18,6 +18,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+from app.__version__ import __version__
 from app.config import AppConfig, ensure_directories, load_config
 from app.errors import AppError, ConfigError
 from app.logging_setup import setup_logging
@@ -39,7 +40,8 @@ def _check_summary(config: AppConfig, prompt: str) -> str:
     webengine = "OK" if importlib.util.find_spec("PySide6.QtWebEngineWidgets") else "not installed (fallback preview)"
     ollama_lines, warnings = _ollama_report(config)
     lines = [
-        f"{config.app_name} - environment check",
+        f"{config.app_name} {__version__} - environment check",
+        f"  Version       : {__version__}",
         f"  Python        : {platform.python_version()} ({sys.executable})",
         f"  Model         : {config.model_name}",
         f"  Ollama URL    : {config.ollama_url}",
@@ -131,6 +133,7 @@ def create_app(argv: list[str] | None = None):
         QApplication.setAttribute(Qt.ApplicationAttribute.AA_ShareOpenGLContexts)
     app = QApplication.instance() or QApplication(argv or sys.argv[:1])
     app.setApplicationName("Local AI Assistant")
+    app.setApplicationVersion(__version__)
     app.setOrganizationName("LocalAIAssistant")
     apply_theme(app)
     return app
@@ -226,6 +229,7 @@ def run_screenshot(config: AppConfig, path: Path, delay_ms: int, open_preview: b
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="main.py", description="Local AI Assistant")
     parser.add_argument("--check", action="store_true", help="print an environment summary and exit")
+    parser.add_argument("--version", action="version", version=f"Local AI Assistant {__version__}")
     parser.add_argument("--screenshot", metavar="PATH", help="run a scripted demo and save a window capture")
     parser.add_argument("--delay", type=int, default=800, metavar="MS", help="wait before the capture (default 800)")
     parser.add_argument("--no-preview", action="store_true", help="capture with the preview panel closed")

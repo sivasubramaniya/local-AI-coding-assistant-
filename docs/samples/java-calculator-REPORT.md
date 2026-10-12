@@ -20,10 +20,14 @@ Exit code 0 · 0.1 s
 
 Output:
 ````text
-PASS: add(2, 3) = 5
-PASS: subtract(5, 3) = 2
-PASS: multiply(4, 3) = 12
-PASS: divide(10, 2) = 5
+PASS: add(2, 3) = 5
+
+PASS: subtract(5, 3) = 2
+
+PASS: multiply(4, 3) = 12
+
+PASS: divide(10, 2) = 5
+
 PASS: divide(10, 0) threw ArithmeticException with correct message
 ````
 

@@ -9,7 +9,7 @@ answers come from a model running on your own computer through Ollama.
 |---|---|---|
 | Windows 11 (64-bit) | the app is a native Windows program | — |
 | 16 GB RAM or more | the 14B model needs about 10 GB | — |
-| ~12 GB free disk | model (9 GB) + app (~0.6 GB) | — |
+| ~12 GB free disk | model (9 GB) + app (~0.33 GB) | — |
 | **Ollama** | runs the model locally | `winget install Ollama.Ollama`, or the installer from ollama.com |
 | **Model** `qwen2.5-coder-14b:latest` | the only model the app uses | see step 2 |
 | JDK 21 (optional) | compile/run generated Java projects | `winget install Microsoft.OpenJDK.21` |
