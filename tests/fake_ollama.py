@@ -169,3 +169,55 @@ class StallingServer:
         self.release.set()
         self._server.shutdown()
         self._server.server_close()
+
+
+class LoopbackOllama:
+    """Serves a FakeOllama over a real TCP socket on 127.0.0.1 (for offline/socket-level tests)."""
+
+    def __init__(self, fake: FakeOllama) -> None:
+        handler_fake = fake
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args):
+                pass
+
+            def _serve(self, method: str) -> None:
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length) if length else b""
+                request = httpx.Request(method, f"http://127.0.0.1{self.path}", content=body)
+                try:
+                    response = handler_fake.handler(request)
+                except httpx.HTTPError:
+                    self.close_connection = True
+                    return
+                data = response.read()  # works for JSON bodies and streamed (generator) bodies
+                self.send_response(response.status_code)
+                self.send_header("Content-Type", response.headers.get("content-type", "application/json"))
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def do_GET(self):  # noqa: N802
+                self._serve("GET")
+
+            def do_POST(self):  # noqa: N802
+                self._serve("POST")
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._server.daemon_threads = True
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def url(self) -> str:
+        host, port = self._server.server_address[:2]
+        return f"http://{host}:{port}"
+
+    def __enter__(self) -> LoopbackOllama:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._server.shutdown()
+        self._server.server_close()

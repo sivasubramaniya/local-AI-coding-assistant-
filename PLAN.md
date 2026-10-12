@@ -143,14 +143,15 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 10 — Offline Verification  `[ ]`
+## Phase 10 — Offline Verification  `[~]`
 
-- [ ] Disconnect the network and test chat, generation, storage and export
-- [ ] Confirm no cloud APIs are called
-- [ ] Test missing-model and missing-dependency scenarios
-- [ ] Document required local tools
+> Automated part done. The Wi-Fi-off manual checklist in `docs/OFFLINE.md` must be run by the owner.
 
-**Deliverable:** honest offline-readiness report.
+- [~] Disconnect the network and test chat, generation, storage and export (automated with a socket guard; manual run pending)
+- [x] Confirm no cloud APIs are called (code audit documented; whole suite passes with `--offline-guard`)
+- [x] Test missing-model and missing-dependency scenarios
+- [x] Document required local tools (`docs/OFFLINE.md`)
+- [x] HTML preview blocks remote resources (off-the-record WebEngine profile + interceptor)
 
 ---
 
@@ -201,3 +202,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-12 | 7 | Security: path validator hardening + attack suite, project validator, allowlisted tool runner (shell=False, timeouts, tree kill), approval flow + Run project tests; config `command_timeout_s`. Phase 6 real generator integration test passed (4.1 min) | 536 passed, 1 skipped (symlink privilege) (MOCK); 1 integration passed (REAL) |
 | 2026-10-12 | 8 | Debug workflow: Java/Python test detection, command sequences, JDK discovery, repair loop (max 3 rounds, diff + confirm + re-run), pytest-cov; generator fixes found by REAL runs (request + earlier files in file prompts, lenient Markdown, path-before-block edits). REAL: Java sample generated and passed (run 2), REAL repair fixed an injected bug in 1 round; run 1 (before fixes) failed and is kept as evidence | 601 passed, 1 skipped (MOCK); coverage 88%; REAL: Java sample PASS, repair demo PASS |
 | 2026-10-12 | 9 | Project export: folder export with exclusions and -N collisions, README instructions, verified ZIP (testzip, names, sizes, extraction), Export/ZIP buttons with success card, Settings dialog (export folder, command timeout) | 601 passed, 1 skipped (MOCK) |
+| 2026-10-12 | 10 | Offline verification (automated): code audit, socket guard (--offline-guard), loopback end-to-end test of chat/generation/storage/export, missing-model/Ollama-stopped checks, HTML preview blocks remote requests, docs/OFFLINE.md with the manual Wi-Fi-off checklist | 601 passed, 1 skipped; guarded suite passes (intermittent exit crash, see known issues) |

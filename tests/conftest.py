@@ -21,3 +21,29 @@ def themed_app(qapp):
 
     apply_theme(qapp)
     return qapp
+
+
+def pytest_addoption(parser):
+    parser.addoption("--offline-guard", action="store_true",
+                     help="block every non-loopback socket for the whole test run (offline verification)")
+
+
+@pytest.fixture(autouse=True)
+def _offline_guard(request):
+    """With --offline-guard, every test runs with non-loopback networking blocked (restored after each test)."""
+    if not request.config.getoption("--offline-guard"):
+        yield None
+        return
+    from tests.offline_guard import block_network
+
+    with block_network() as attempts:
+        yield attempts
+    assert not attempts, f"{request.node.nodeid} tried to reach the network: {attempts}"
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Join any worker threads before Qt and Python shut down (avoids a Qt abort at exit)."""
+    import sys
+
+    if "app.ui.workers" in sys.modules:
+        sys.modules["app.ui.workers"].shutdown_workers(timeout_ms=5000)

@@ -67,7 +67,11 @@ class HtmlPreview(QWidget):
         if use_webengine:
             from PySide6.QtWebEngineWidgets import QWebEngineView
 
+            from app.ui.offline_web import make_offline_page
+
             self.view = QWebEngineView(self)
+            self.page = make_offline_page(self.view, self)  # remote resources in previewed HTML are blocked
+            self.view.setPage(self.page)
             self.is_fallback = False
         else:
             self.notice = QFrame()
