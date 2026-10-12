@@ -64,3 +64,64 @@ def test_bad_config_exits_two_without_traceback(tmp_path):
     assert "Configuration error" in result.stderr
     assert "log_level" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+def test_check_reports_database_without_creating_it(tmp_path):
+    result = _run(tmp_path, "--check", LAA_OLLAMA_URL=UNUSED_LOCAL_URL)
+    assert result.returncode == 0, result.stderr
+    assert "assistant.db" in result.stdout
+    assert "DB schema     : not created yet (app supports v1)" in result.stdout
+    assert not (tmp_path / "data" / "assistant.db").exists()
+
+
+def test_check_reports_schema_and_chat_count(tmp_path):
+    from app.storage.chat_repository import SqliteChatRepository
+
+    repo = SqliteChatRepository.open(tmp_path / "data" / "assistant.db")
+    repo.create_chat()
+    repo.close()
+    result = _run(tmp_path, "--check", LAA_OLLAMA_URL=UNUSED_LOCAL_URL)
+    assert "DB schema     : v1 (app supports v1)" in result.stdout
+    assert "Chats         : 1" in result.stdout
+
+
+@pytest.mark.gui
+def test_screenshot_demo_mode_never_creates_the_database(tmp_path):
+    shot = tmp_path / "shot.png"
+    result = _run(tmp_path, "--screenshot", str(shot), "--delay", "50", "--no-preview",
+                  QT_QPA_PLATFORM="offscreen", LAA_OLLAMA_URL=UNUSED_LOCAL_URL)
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path / "data" / "assistant.db").exists()
+
+
+def test_open_history_store_choices(tmp_config):
+    import main as entry
+    from app.backend.memory_store import InMemoryChatStore
+    from app.storage.chat_repository import SqliteChatRepository
+
+    db = tmp_config.db_path
+    db.parent.mkdir(parents=True)
+    db.write_bytes(b"garbage" * 500)
+    asked = []
+
+    def choose_fresh(message, offer_fresh):
+        asked.append((message, offer_fresh))
+        return "fresh"
+
+    store = entry.open_history_store(tmp_config, choose_fresh)
+    assert isinstance(store, SqliteChatRepository)
+    store.close()
+    assert asked[0][1] is True and ".corrupt-" in asked[0][0]
+    backups = list(db.parent.glob("assistant.db.corrupt-*"))
+    assert len(backups) == 1 and backups[0].read_bytes() == b"garbage" * 500
+
+    # a newer schema: no fresh option, file untouched; the user picks "continue without saving"
+    store = SqliteChatRepository.open(db)
+    store._conn.execute("INSERT INTO schema_version (version, applied_at) VALUES (7, 'x')")
+    store.close()
+    before = db.read_bytes()
+    seen = []
+    memory = entry.open_history_store(tmp_config, lambda m, fresh: seen.append(fresh) or "memory")
+    assert isinstance(memory, InMemoryChatStore) and seen == [False]
+    assert db.read_bytes() == before
+    assert entry.open_history_store(tmp_config, lambda m, fresh: "quit") is None

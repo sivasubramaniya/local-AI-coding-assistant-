@@ -1,7 +1,7 @@
 """Chat orchestration: message lists for the model, context trimming, history updates.
 
 The system prompt is always the first message of every request (send, regenerate,
-retry). The store is the in-memory one until Phase 5 swaps in SQLite.
+retry) and is never stored. Works with any ChatStore (in-memory or SQLite).
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import math
 
-from app.backend.memory_store import DEFAULT_TITLE, ChatMessage, InMemoryChatStore, title_from_prompt
+from app.backend.chat_store import ChatMessage, ChatStore
 from app.config import AppConfig
 from app.errors import StorageError
 from app.prompts import load_system_prompt
@@ -34,6 +34,11 @@ def reply_reserve(num_ctx: int) -> int:
     return min(max(MIN_REPLY_RESERVE, num_ctx // 4), num_ctx // 2)
 
 
+def _in_context(message: ChatMessage) -> bool:
+    """Error notices are app messages, not model output: they never go back to the model."""
+    return message.role in ("user", "assistant") and bool(message.content) and message.status != "error"
+
+
 def build_messages(
     history: list[ChatMessage],
     user_text: str,
@@ -41,7 +46,7 @@ def build_messages(
     num_ctx: int,
 ) -> list[dict]:
     """[system, ...trimmed history..., latest user]. Oldest turns are dropped first."""
-    earlier = [{"role": m.role, "content": m.content} for m in history if m.role in ("user", "assistant") and m.content]
+    earlier = [{"role": m.role, "content": m.content} for m in history if _in_context(m)]
     system = {"role": "system", "content": system_prompt}
     latest = {"role": "user", "content": user_text}
 
@@ -68,7 +73,7 @@ def build_messages(
 
 
 class ChatService:
-    def __init__(self, store: InMemoryChatStore, config: AppConfig, system_prompt: str | None = None) -> None:
+    def __init__(self, store: ChatStore, config: AppConfig, system_prompt: str | None = None) -> None:
         self.store = store
         self.config = config
         self.system_prompt = system_prompt if system_prompt is not None else load_system_prompt()
@@ -77,27 +82,36 @@ class ChatService:
         return build_messages(history, user_text, self.system_prompt, self.config.num_ctx)
 
     def send(self, chat_id: str, text: str) -> list[dict]:
-        """Store the user message and return the request messages for it."""
-        chat = self.store.get(chat_id)
-        history = list(chat.messages)
-        if not chat.messages and chat.title == DEFAULT_TITLE:
-            self.store.rename(chat_id, title_from_prompt(text))
+        """Store the user message (the store sets the auto-title) and return the request messages."""
+        history = self.store.get_messages(chat_id)
         self.store.add_message(chat_id, ChatMessage("user", text))
         return self._build(history, text)
 
     def regenerate(self, chat_id: str) -> list[dict]:
-        """Drop the last reply (if any) and rebuild the request for the last user message.
+        """Rebuild the request for the last user message, ignoring any reply after it.
 
-        Also used for Retry after an error, where there is no reply to drop.
+        Also used for Retry after an error. The old reply stays stored until the new
+        one is recorded (record_reply replaces it in one transaction).
         """
-        self.store.remove_trailing_assistant(chat_id)
-        chat = self.store.get(chat_id)
-        if not chat.messages or chat.messages[-1].role != "user":
+        messages = self.store.get_messages(chat_id)
+        while messages and messages[-1].role == "assistant":
+            messages.pop()
+        if not messages:
             raise StorageError("There is no message to answer again.")
-        return self._build(chat.messages[:-1], chat.messages[-1].content)
+        return self._build(messages[:-1], messages[-1].content)
 
-    def record_reply(self, chat_id: str, text: str, status: str | None = None,
-                     files: list[str] | None = None) -> None:
-        if not self.store.exists(chat_id) or not text:
-            return
-        self.store.add_message(chat_id, ChatMessage("assistant", text, files=list(files or []), status=status))
+    def record_reply(
+        self,
+        chat_id: str,
+        text: str,
+        status: str = "complete",
+        files: list[str] | None = None,
+        eval_count: int | None = None,
+        tokens_per_sec: float | None = None,
+    ) -> ChatMessage | None:
+        """Save the assistant reply, replacing any earlier reply to the same user message."""
+        if not text or not self.store.chat_exists(chat_id):
+            return None
+        message = ChatMessage("assistant", text, files=list(files or []), status=status,
+                              eval_count=eval_count, tokens_per_sec=tokens_per_sec)
+        return self.store.replace_reply(chat_id, message)

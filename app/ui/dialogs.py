@@ -1,4 +1,4 @@
-"""Dialogs. CommandApprovalDialog is built in Phase 3 and wired to tool_runner in Phase 7."""
+"""Dialogs. CommandApprovalDialog (wired to tool_runner in Phase 7) and the storage recovery prompt."""
 
 from __future__ import annotations
 
@@ -61,3 +61,33 @@ class CommandApprovalDialog(QDialog):
         label = QLabel(text)
         label.setObjectName("dialogLabel")
         return label
+
+
+RECOVER_FRESH = "fresh"
+RECOVER_MEMORY = "memory"
+RECOVER_QUIT = "quit"
+
+
+def ask_storage_recovery(message: str, offer_fresh: bool, parent: QWidget | None = None) -> str:
+    """Ask what to do when the history database cannot be opened.
+
+    Returns RECOVER_FRESH (start a new database; the old file was kept as a backup),
+    RECOVER_MEMORY (run without saving history) or RECOVER_QUIT.
+    """
+    from PySide6.QtWidgets import QMessageBox
+
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setWindowTitle("Chat history")
+    box.setText(message)
+    fresh = box.addButton("Start a fresh database", QMessageBox.ButtonRole.AcceptRole) if offer_fresh else None
+    memory = box.addButton("Continue without saving history", QMessageBox.ButtonRole.ActionRole)
+    box.addButton("Quit", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(fresh or memory)
+    box.exec()
+    clicked = box.clickedButton()
+    if fresh is not None and clicked is fresh:
+        return RECOVER_FRESH
+    if clicked is memory:
+        return RECOVER_MEMORY
+    return RECOVER_QUIT

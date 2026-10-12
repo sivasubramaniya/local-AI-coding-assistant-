@@ -53,8 +53,8 @@ def test_send_streams_into_assistant_message(qtbot, window):
     assert assistant.text() == demo.DEMO_ANSWER
     assert [c.path for c in assistant.file_cards] == demo.DEMO_ANSWER_FILES
     assert not window.composer.is_busy()
-    chat = window.store.get(window.current_chat_id())
-    assert [m.role for m in chat.messages] == ["user", "assistant"]
+    chat = window.store.get_chat(window.current_chat_id())
+    assert [m.role for m in window.store.get_messages(chat.id)] == ["user", "assistant"]
     assert chat.title == "Write hello world"
 
 
@@ -131,12 +131,12 @@ def test_new_chat_rename_delete(window, monkeypatch):
 
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("Renamed chat", True))
     window.sidebar.renameRequested.emit(chat_id)
-    assert window.store.get(chat_id).title == "Renamed chat"
+    assert window.store.get_chat(chat_id).title == "Renamed chat"
     assert "Renamed chat" in window.sidebar.chat_titles()
 
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
     window.sidebar.deleteRequested.emit(chat_id)
-    assert not window.store.exists(chat_id)
+    assert not window.store.chat_exists(chat_id)
     assert chat_id not in window.sidebar.chat_ids()
     assert window.current_chat_id() is not None
 
@@ -145,14 +145,14 @@ def test_delete_cancelled_keeps_chat(window, monkeypatch):
     chat_id = window.new_chat()
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No)
     window.sidebar.deleteRequested.emit(chat_id)
-    assert window.store.exists(chat_id)
+    assert window.store.chat_exists(chat_id)
 
 
 def test_switching_chats_swaps_messages(window):
-    welcome_id = next(c.id for c in window.store.list() if c.title == demo.WELCOME_CHAT_TITLE)
+    welcome_id = next(c.id for c in window.store.list_chats() if c.title == demo.WELCOME_CHAT_TITLE)
     window.select_chat(welcome_id)
     assert window.chat_view.items[0].text() == demo.WELCOME_PROMPT
-    other_id = next(c.id for c in window.store.list() if c.title == "Flask login bug")
+    other_id = next(c.id for c in window.store.list_chats() if c.title == "Flask login bug")
     window.select_chat(other_id)
     assert "flask login bug" in window.chat_view.items[0].text()
     assert window.sidebar.current_chat_id() == other_id
@@ -163,7 +163,7 @@ def test_search_filters_recents(window):
     window.sidebar.search_field.setText("flask")
     assert window.sidebar.chat_proxy.rowCount() == 1
     window.sidebar.search_field.clear()
-    assert window.sidebar.chat_proxy.rowCount() == len(window.store.list())
+    assert window.sidebar.chat_proxy.rowCount() == len(window.store.list_chats())
 
 
 def test_close_while_streaming_does_not_crash(qtbot, window):

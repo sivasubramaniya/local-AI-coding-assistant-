@@ -15,6 +15,7 @@ import importlib.util
 import logging
 import platform
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from app.config import AppConfig, ensure_directories, load_config
@@ -48,7 +49,7 @@ def _check_summary(config: AppConfig, prompt: str) -> str:
         f"  Timeouts      : connect={config.connect_timeout_s:g}s, request={config.request_timeout_s:g}s, "
         f"stream gap={config.stream_read_timeout_s:g}s, health every {config.health_interval_s:g}s",
         f"  Data dir      : {config.data_dir}",
-        f"  Database      : {config.db_path}",
+        *_database_report(config),
         f"  Logs dir      : {config.logs_dir}",
         f"  Projects dir  : {config.projects_dir}",
         f"  Export dir    : {config.export_dir}",
@@ -59,6 +60,22 @@ def _check_summary(config: AppConfig, prompt: str) -> str:
         *(f"WARNING: {w}" for w in warnings),
     ]
     return "\n".join(lines)
+
+
+def _database_report(config: AppConfig) -> list[str]:
+    """Read-only: never creates or migrates the database."""
+    from app.storage.database import inspect_database, latest_version
+
+    info = inspect_database(config.db_path)
+    lines = [f"  Database      : {config.db_path}"]
+    if not info.exists:
+        lines.append(f"  DB schema     : not created yet (app supports v{latest_version()})")
+    elif info.error:
+        lines.append(f"  DB schema     : UNREADABLE ({info.error})")
+    else:
+        lines.append(f"  DB schema     : v{info.schema_version} (app supports v{latest_version()})")
+        lines.append(f"  Chats         : {info.chat_count}")
+    return lines
 
 
 def _ollama_report(config: AppConfig) -> tuple[list[str], list[str]]:
@@ -107,13 +124,50 @@ def create_app(argv: list[str] | None = None):
     return app
 
 
+def open_history_store(config: AppConfig, choose: Callable[[str, bool], str]):
+    """Open the SQLite chat history at config.db_path.
+
+    When it cannot be opened, ``choose(message, offer_fresh)`` decides: "fresh" (a damaged
+    file was already moved to a backup, so open a new one), "memory" (run without saving)
+    or "quit" (returns None). User data is never deleted.
+    """
+    from app.backend.memory_store import InMemoryChatStore
+    from app.storage.chat_repository import SqliteChatRepository
+    from app.storage.database import DatabaseCorruptError
+
+    try:
+        return SqliteChatRepository.open(config.db_path)
+    except DatabaseCorruptError as exc:
+        logger.error("History database unreadable: %s", exc.full_text())
+        choice = choose(f"{exc.message}\n\nStart with a fresh, empty chat history?", True)
+        if choice == "fresh":
+            try:
+                return SqliteChatRepository.open(config.db_path)
+            except AppError as again:
+                logger.error("Fresh database failed: %s", again.full_text())
+                choice = choose(again.message, False)
+    except AppError as exc:
+        logger.error("History database unavailable: %s", exc.full_text())
+        choice = choose(exc.message, False)
+    return InMemoryChatStore() if choice == "memory" else None
+
+
 def run_gui(config: AppConfig, demo_mode: bool = False) -> int:
+    from app.backend.memory_store import InMemoryChatStore
+    from app.ui.dialogs import ask_storage_recovery
     from app.ui.main_window import MainWindow
 
     app = create_app()
-    window = MainWindow(config, demo_mode=demo_mode)
+    # demo mode never touches the real database
+    store = InMemoryChatStore() if demo_mode else open_history_store(config, ask_storage_recovery)
+    if store is None:
+        return EXIT_ERROR
+    window = MainWindow(config, store=store, demo_mode=demo_mode)
     window.showMaximized()
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        store.close()
 
 
 def run_screenshot(config: AppConfig, path: Path, delay_ms: int, open_preview: bool) -> int:

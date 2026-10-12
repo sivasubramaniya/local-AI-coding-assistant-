@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.backend.chat_service import ChatService
+from app.backend.chat_store import FEEDBACK_BAD, LAST_CHAT_SETTING, ChatMessage, ChatStore, Conversation
 from app.backend.memory_store import InMemoryChatStore
 from app.backend.ollama_client import OllamaClient, StreamStats
 from app.backend.status import ConnectionState, HealthResult, stub_connection_state
@@ -42,6 +43,7 @@ from app.ui.workers import (
     FakeStreamWorker,
     HealthCheckWorker,
     OllamaStreamWorker,
+    StreamWorker,
     WorkerHandle,
     start_worker,
 )
@@ -57,6 +59,7 @@ STATUS_STOPPED = "(stopped)"
 STATUS_FAILED = "Failed"
 STOP_WAIT_MS = 1500
 CLOSE_WAIT_MS = 6000
+DELETE_CONFIRM = "Delete this chat? This cannot be undone."
 
 
 def _top_bar_button(icon: str, tooltip: str, text: str = "") -> QToolButton:
@@ -72,11 +75,18 @@ def _top_bar_button(icon: str, tooltip: str, text: str = "") -> QToolButton:
     return button
 
 
-def finished_status(config: AppConfig, stats: StreamStats | None) -> str:
-    name = config.model_base_name
-    if stats is None or stats.eval_count <= 0:
+def reply_status(model_name: str, eval_count: int | None, tokens_per_sec: float | None) -> str:
+    """Status line of a finished answer: model, token count and speed when known."""
+    name = model_name.removesuffix(":latest")
+    if not eval_count or eval_count <= 0:
         return name
-    return f"{name} · {stats.eval_count} tokens · {stats.tokens_per_second:.1f} tok/s"
+    return f"{name} · {eval_count} tokens · {tokens_per_sec or 0.0:.1f} tok/s"
+
+
+def finished_status(config: AppConfig, stats: StreamStats | None) -> str:
+    if stats is None:
+        return reply_status(config.model_name, None, None)
+    return reply_status(config.model_name, stats.eval_count, stats.tokens_per_second)
 
 
 class MainWindow(QMainWindow):
@@ -86,7 +96,7 @@ class MainWindow(QMainWindow):
     def __init__(
         self,
         config: AppConfig,
-        store: InMemoryChatStore | None = None,
+        store: ChatStore | None = None,
         token_delay_s: float = 0.04,
         use_webengine: bool | None = None,
         demo_mode: bool = False,
@@ -96,7 +106,7 @@ class MainWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.config = config
-        self.store = store or InMemoryChatStore()
+        self.store: ChatStore = store if store is not None else InMemoryChatStore()
         self.service = ChatService(self.store, config, system_prompt)
         self.demo_mode = demo_mode
         self.token_delay_s = token_delay_s
@@ -161,8 +171,8 @@ class MainWindow(QMainWindow):
             self.sidebar.set_projects([demo.DEMO_PROJECT_NAME])
             self.select_chat(demo.seed_demo_store(self.store))
         else:
-            self.sidebar.set_projects([])
-            self.new_chat()
+            self._refresh_projects()
+            self.restore_last_chat()
 
     # --- construction ----------------------------------------------------------
     def _build_chat_panel(self) -> QWidget:
@@ -229,50 +239,137 @@ class MainWindow(QMainWindow):
         self.preview.exportRequested.connect(lambda _path: self._export_pending())
 
     # --- chats -----------------------------------------------------------------
+    # Every store call runs here on the UI thread. A StorageError never escapes:
+    # it is shown as a toast or an error card and the app keeps running.
     def current_chat_id(self) -> str | None:
         return self._current_chat_id
 
+    def _storage_failed(self, exc: AppError, card: bool = False) -> None:
+        logger.warning("Storage error: %s", exc.full_text())
+        if card:
+            error = self.chat_view.add_error(exc.message)
+            error.retry_button.hide()
+        else:
+            self.show_toast(exc.message)
+
     def _refresh_sidebar(self) -> None:
-        chats = [(c.id, c.title) for c in self.store.list()]
+        try:
+            chats = [(c.id, c.title) for c in self.store.list_chats()]
+        except AppError as exc:
+            self._storage_failed(exc)
+            return
         self.sidebar.set_chats(chats, self._current_chat_id)
 
-    def new_chat(self) -> str:
+    def _refresh_projects(self) -> None:
+        try:
+            names = [p.name for p in self.store.list_projects()]
+        except AppError as exc:
+            self._storage_failed(exc)
+            names = []
+        self.sidebar.set_projects(names)
+
+    def _set_current(self, chat_id: str | None) -> None:
+        self._current_chat_id = chat_id
+        try:
+            self.store.set_setting(LAST_CHAT_SETTING, chat_id)
+        except AppError as exc:
+            logger.warning("Could not remember the open chat: %s", exc.full_text())
+
+    def _is_empty(self, chat_id: str | None) -> bool:
+        if not chat_id:
+            return False
+        try:
+            return self.store.chat_exists(chat_id) and not self.store.get_messages(chat_id)
+        except AppError:
+            return False
+
+    def _discard_if_empty(self, chat_id: str | None) -> None:
+        """Drop an untouched 'New chat' when the user leaves it (it holds no data)."""
+        if chat_id and self._is_empty(chat_id):
+            try:
+                self.store.delete_chat(chat_id)
+            except AppError as exc:
+                logger.warning("Could not remove an empty chat: %s", exc.full_text())
+
+    def restore_last_chat(self) -> None:
+        """Reopen the chat that was open last time, or start a new one."""
+        try:
+            last = self.store.get_setting(LAST_CHAT_SETTING)
+            exists = bool(last) and self.store.chat_exists(last)
+        except AppError as exc:
+            self._storage_failed(exc)
+            last, exists = None, False
+        if exists:
+            self.select_chat(last)
+        else:
+            self.new_chat()
+
+    def new_chat(self) -> str | None:
         self.stop_generation()
-        chat = self.store.create()
-        self._current_chat_id = chat.id
+        current = self._current_chat_id
+        if self._is_empty(current):
+            chat_id = current  # already on an untouched chat: reuse it
+        else:
+            try:
+                chat_id = self.store.create_chat(model_name=self.config.model_name).id
+            except AppError as exc:
+                self._storage_failed(exc)
+                return None
+        self._set_current(chat_id)
         self.chat_view.clear()
         self._refresh_sidebar()
         self.composer.input.setFocus()
-        return chat.id
+        return chat_id
 
     def select_chat(self, chat_id: str) -> None:
         if chat_id == self._current_chat_id and self.chat_view.items:
             return
         self.stop_generation()
         try:
-            chat = self.store.get(chat_id)
+            chat = self.store.get_chat(chat_id)
+            messages = self.store.get_messages(chat_id)
         except AppError as exc:
-            self.show_toast(exc.message)
+            self._storage_failed(exc)
+            self._refresh_sidebar()
             return
-        self._current_chat_id = chat_id
+        previous = self._current_chat_id
+        self._set_current(chat_id)
+        if previous != chat_id:
+            self._discard_if_empty(previous)
         self.chat_view.clear()
-        for message in chat.messages:
-            if message.role == "user":
-                self.chat_view.add_user_message(message.content)
-            else:
-                widget = self._add_assistant_widget(message.status)
-                widget.set_text(message.content)
-                for path in message.files:
-                    widget.add_file_card(path)
-                widget.finish()
+        for message in messages:
+            self._render_stored(chat, message)
         self._refresh_sidebar()
         QTimer.singleShot(0, self.chat_view.scroll_to_bottom)
 
+    def _render_stored(self, chat: Conversation, message: ChatMessage) -> None:
+        if message.role == "user":
+            self.chat_view.add_user_message(message.content)
+            return
+        if message.status == "error":
+            card = self.chat_view.add_error(message.content)
+            card.retryRequested.connect(self.retry)
+            return
+        if message.status == "stopped":
+            status = STATUS_STOPPED
+        elif self.demo_mode:
+            status = demo.DEMO_STATUS
+        else:
+            status = reply_status(chat.model_name or self.config.model_name, message.eval_count,
+                                  message.tokens_per_sec)
+        widget = self._add_assistant_widget(status)
+        widget.set_text(message.content)
+        for path in message.files:
+            widget.add_file_card(path)
+        widget.finish()
+        widget.message_id = message.id
+        widget.actions.set_thumbs_down(message.feedback == FEEDBACK_BAD)
+
     def rename_chat(self, chat_id: str, title: str) -> bool:
         try:
-            self.store.rename(chat_id, title)
+            self.store.rename_chat(chat_id, title)
         except AppError as exc:
-            self.show_toast(exc.message)
+            self._storage_failed(exc)
             return False
         self._refresh_sidebar()
         return True
@@ -281,36 +378,43 @@ class MainWindow(QMainWindow):
         if chat_id == self._current_chat_id:
             self.stop_generation()
         try:
-            self.store.delete(chat_id)
+            self.store.delete_chat(chat_id)
         except AppError as exc:
-            self.show_toast(exc.message)
+            self._storage_failed(exc)
             return
         if chat_id == self._current_chat_id:
-            remaining = self.store.list()
+            self._current_chat_id = None
+            try:
+                remaining = self.store.list_chats()
+            except AppError as exc:
+                self._storage_failed(exc)
+                remaining = []
             if remaining:
-                self._current_chat_id = None
                 self.select_chat(remaining[0].id)
-                return
-            self.new_chat()
+            else:
+                self.new_chat()
             return
         self._refresh_sidebar()
 
     def _ask_rename(self, chat_id: str) -> None:
         try:
-            current = self.store.get(chat_id).title
-        except AppError:
+            current = self.store.get_chat(chat_id).title
+        except AppError as exc:
+            self._storage_failed(exc)
             return
-        title, ok = QInputDialog.getText(self, "Rename chat", "New name:", text=current)
+        title, ok = QInputDialog.getText(self, "Rename chat", "New name (1–80 characters):", text=current)
         if ok:
             self.rename_chat(chat_id, title)
 
     def _ask_delete(self, chat_id: str) -> None:
         try:
-            title = self.store.get(chat_id).title
-        except AppError:
+            if not self.store.chat_exists(chat_id):
+                return
+        except AppError as exc:
+            self._storage_failed(exc)
             return
         answer = QMessageBox.question(
-            self, "Delete chat", f"Delete “{title}”? This cannot be undone.",
+            self, "Delete chat", DELETE_CONFIRM,
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
         )
         if answer == QMessageBox.StandardButton.Yes:
@@ -323,6 +427,28 @@ class MainWindow(QMainWindow):
     def _delete_current(self) -> None:
         if self._current_chat_id:
             self._ask_delete(self._current_chat_id)
+
+    def _on_feedback(self, widget: AssistantMessage, checked: bool) -> None:
+        if widget.message_id is None:
+            return
+        try:
+            self.store.set_feedback(widget.message_id, FEEDBACK_BAD if checked else None)
+        except AppError as exc:
+            self._storage_failed(exc)
+            widget.actions.set_thumbs_down(not checked)
+
+    def _save_reply(self, chat_id: str, text: str, status: str, files: list[str] | None = None,
+                    stats: StreamStats | None = None) -> ChatMessage | None:
+        has_stats = stats is not None and stats.eval_count > 0
+        try:
+            return self.service.record_reply(
+                chat_id, text, status, files,
+                eval_count=stats.eval_count if has_stats else None,
+                tokens_per_sec=round(stats.tokens_per_second, 2) if has_stats else None,
+            )
+        except AppError as exc:
+            self._storage_failed(exc, card=chat_id == self._current_chat_id)
+            return None
 
     # --- health ----------------------------------------------------------------
     def health(self) -> HealthResult:
@@ -363,12 +489,17 @@ class MainWindow(QMainWindow):
         if chat_id is None:
             return
         self.composer.set_busy(False)
-        if chat_id != self._current_chat_id or not self.store.exists(chat_id):
+        if chat_id != self._current_chat_id:
             return
-        if self._health.state is ConnectionState.CONNECTED:
-            self._start_ollama(chat_id, self.service.regenerate(chat_id))
-        else:
+        if self._health.state is not ConnectionState.CONNECTED:
             self._show_not_ready()
+            return
+        try:
+            messages = self.service.regenerate(chat_id)
+        except AppError as exc:
+            self._storage_failed(exc, card=True)
+            return
+        self._start_ollama(chat_id, messages)
 
     # --- generation ------------------------------------------------------------
     def is_busy(self) -> bool:
@@ -379,16 +510,23 @@ class MainWindow(QMainWindow):
         widget.fileOpened.connect(self.open_file)
         widget.exportRequested.connect(self._export_pending)
         widget.regenerateRequested.connect(self.regenerate)
+        widget.thumbsDownToggled.connect(lambda checked, w=widget: self._on_feedback(w, checked))
         return widget
 
     def submit_prompt(self, text: str, project_mode: bool = False) -> bool:
         text = text.strip()
         if not text or self.is_busy():
             return False
-        if self._current_chat_id is None or not self.store.exists(self._current_chat_id):
-            self.new_chat()
-        chat_id = self._current_chat_id
-        messages = self.service.send(chat_id, text)
+        try:
+            if self._current_chat_id is None or not self.store.chat_exists(self._current_chat_id):
+                self._current_chat_id = None
+                if self.new_chat() is None:
+                    return False
+            chat_id = self._current_chat_id
+            messages = self.service.send(chat_id, text)
+        except AppError as exc:
+            self._storage_failed(exc, card=True)
+            return False
         self._refresh_sidebar()
         self.chat_view.add_user_message(text)
         self._dispatch(chat_id, messages)
@@ -475,8 +613,20 @@ class MainWindow(QMainWindow):
         # the queued 'cancelled' signal may not be delivered yet; finish the UI state now
         self._on_cancelled()
 
+    def _from_active_worker(self) -> bool:
+        """False for late queued signals from a worker that was already stopped.
+
+        After Stop, the old worker's 'cancelled' can arrive after the next stream started;
+        it must not end that new stream. Direct calls (including from other slots, such
+        as the Stop button) are always accepted.
+        """
+        if self._handle is None:
+            return False
+        sender = self.sender()
+        return not isinstance(sender, StreamWorker) or sender is self._handle.worker
+
     def _on_token(self, token: str) -> None:
-        if self._active_message is None:
+        if self._active_message is None or not self._from_active_worker():
             return
         if not self._got_first_token:
             self._got_first_token = True
@@ -485,7 +635,7 @@ class MainWindow(QMainWindow):
         self._active_message.append_token(token)
 
     def _on_finished(self, result: object) -> None:
-        if self._handle is None:
+        if not self._from_active_worker():
             return
         data = result if isinstance(result, dict) else {}
         text = str(data.get("text", ""))
@@ -498,22 +648,27 @@ class MainWindow(QMainWindow):
                 message.add_file_card(path)
             message.finish(status=status)
         if self._active_chat_id:
-            self.service.record_reply(self._active_chat_id, text, status, files)
+            stats = data.get("stats") if isinstance(data.get("stats"), StreamStats) else None
+            saved = self._save_reply(self._active_chat_id, text, "complete", files, stats)
+            if saved is not None and message is not None:
+                message.message_id = saved.id
         self._end_stream()
         self.streamFinished.emit()
 
     def _on_cancelled(self) -> None:
-        if self._handle is None:
+        if not self._from_active_worker():
             return
         message = self._active_message
         if message is not None:
             message.finish(status=STATUS_STOPPED)
             if self._active_chat_id:
-                self.service.record_reply(self._active_chat_id, message.text(), STATUS_STOPPED)
+                saved = self._save_reply(self._active_chat_id, message.text(), "stopped")
+                if saved is not None:
+                    message.message_id = saved.id
         self._end_stream()
 
     def _on_error(self, error: object) -> None:
-        if self._handle is None:
+        if not self._from_active_worker():
             return
         err = error if isinstance(error, AppError) else AppError(str(error))
         message = self._active_message
@@ -526,9 +681,12 @@ class MainWindow(QMainWindow):
             self.set_health(HealthResult(ConnectionState.MODEL_MISSING, err.message))
         elif isinstance(err, OllamaUnavailableError) and "not running" in err.message:
             self.set_health(HealthResult(ConnectionState.DISCONNECTED, err.message))
+        chat_id = self._active_chat_id
         card = self.chat_view.add_error(err.message)
         card.retryRequested.connect(self.retry)
         self._end_stream()
+        if chat_id:
+            self._save_reply(chat_id, err.message, "error")  # friendly text only, never a traceback
 
     def _end_stream(self) -> None:
         self._handle = None

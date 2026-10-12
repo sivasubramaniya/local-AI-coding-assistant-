@@ -76,13 +76,16 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 5 — Chat History and SQLite Storage  `[ ]`
+## Phase 5 — Chat History and SQLite Storage  `[x]`
 
-- [ ] Schema: `conversations`, `messages`, `projects` (plus a `schema_version` table)
-- [ ] Create, reopen, rename and delete chats
-- [ ] Restore history into the UI
-- [ ] Link chats to generated projects
-- [ ] Tests for CRUD, error handling and migrations
+- [x] Schema v1: `conversations`, `messages`, `projects`, `app_settings` plus `schema_version`; WAL, foreign keys, busy_timeout
+- [x] Migrations (ordered, one transaction each); newer schema refused untouched; corrupt file backed up, never deleted
+- [x] `ChatStore` protocol shared by `InMemoryChatStore` and `SqliteChatRepository`
+- [x] Create, reopen (last chat on start), rename (1–80 chars) and delete (confirm, cascade) chats
+- [x] Restore history into the UI and into the model context; stopped/error replies saved with status
+- [x] Thumbs-down feedback persists; Projects section reads the `projects` table
+- [x] Link chats to generated projects (FK `ON DELETE SET NULL`; rows are written in Phase 6)
+- [x] Tests for CRUD, rollback, migrations, corruption, restart persistence and storage errors in the UI
 
 **Deliverable:** persistent local chat history.
 
@@ -194,3 +197,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-11 | 3 | Native PySide6 UI: theme/QSS, SVG icons, sidebar, chat view, composer, preview panel (QTextBrowser HTML fallback), worker pattern, demo stream, `--screenshot` | 135 passed |
 | 2026-10-11 | 4 | Ollama client (httpx, streaming, abort), chat service (system prompt + trimming), health checks, real worker, `--demo`, loopback-only URL, Modelfile; fixed worker lifetime crash; QtWebEngine installed | 193 passed, 3 integration skipped (model missing) |
 | 2026-10-12 | 1+4 | Real-model verification: `ollama create qwen2.5-coder-14b -f .\ollama\Modelfile`, modelfile inspected, timed request (2.7 tok/s), integration tests | 3 integration passed (REAL) |
+| 2026-10-12 | 5 | SQLite chat history (stdlib sqlite3): schema v1, migrations, corrupt/newer DB handling, ChatStore protocol, restart restore, feedback, `--check` DB report; fixed stale worker signal ending the next stream | 252 passed (MOCK), 3 integration deselected |

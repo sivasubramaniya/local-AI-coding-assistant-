@@ -202,9 +202,19 @@ class ActionRow(QWidget):
         layout.addStretch(1)
 
     def _on_thumbs(self, checked: bool) -> None:
+        self._paint_thumbs(checked)
+        self.thumbsDownToggled.emit(checked)
+
+    def _paint_thumbs(self, checked: bool) -> None:
         color = theme.ERROR if checked else theme.TEXT_SECONDARY
         self.thumbs_button.setIcon(load_icon("thumbs-down", color, theme.ACTION_ICON_SIZE, hover_color=theme.TEXT_PRIMARY))
-        self.thumbsDownToggled.emit(checked)
+
+    def set_thumbs_down(self, checked: bool) -> None:
+        """Show a saved state without emitting thumbsDownToggled."""
+        blocked = self.thumbs_button.blockSignals(True)
+        self.thumbs_button.setChecked(checked)
+        self.thumbs_button.blockSignals(blocked)
+        self._paint_thumbs(checked)
 
 
 class AssistantMessage(QWidget):
@@ -213,6 +223,7 @@ class AssistantMessage(QWidget):
     fileOpened = Signal(str)
     exportRequested = Signal()
     regenerateRequested = Signal()
+    thumbsDownToggled = Signal(bool)
 
     FILE_CARD_RATIO = 0.75
 
@@ -220,6 +231,7 @@ class AssistantMessage(QWidget):
         super().__init__(parent)
         self._text = ""
         self._finished = False
+        self.message_id: int | None = None  # stored message id, once saved
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
@@ -251,6 +263,7 @@ class AssistantMessage(QWidget):
         self.actions.copyRequested.connect(self.copy_text)
         self.actions.exportRequested.connect(self.exportRequested.emit)
         self.actions.regenerateRequested.connect(self.regenerateRequested.emit)
+        self.actions.thumbsDownToggled.connect(self.thumbsDownToggled.emit)
         layout.addWidget(self.actions)
 
         self._render_timer = QTimer(self)

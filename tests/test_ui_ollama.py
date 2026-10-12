@@ -72,7 +72,7 @@ def test_send_streams_tokens_and_shows_stats(qtbot, make_window, fake):
     assert body["messages"][0] == {"role": "system", "content": load_system_prompt()}
     assert body["messages"][-1] == {"role": "user", "content": "say hello"}
     assert body["stream"] is True and body["options"]["num_ctx"] == 8192
-    stored = win.store.get(win.current_chat_id()).messages
+    stored = win.store.get_messages(win.current_chat_id())
     assert [m.role for m in stored] == ["user", "assistant"]
 
 
@@ -107,7 +107,7 @@ def test_disconnected_shows_error_card_and_retry_recovers(qtbot, make_window, fa
     assert win.health().state is ConnectionState.CONNECTED
     assert _errors(win) == []
     assert _assistants(win)[0].text() == "Hello from the model."
-    stored = win.store.get(win.current_chat_id()).messages
+    stored = win.store.get_messages(win.current_chat_id())
     assert [m.role for m in stored] == ["user", "assistant"]  # the question was not duplicated
 
 
@@ -140,8 +140,8 @@ def test_stop_keeps_partial_marks_stopped_and_restores_send(qtbot, make_window, 
     assert win.composer.send_button.toolTip().startswith("Send")
     assert assistant.status_label.text() == STATUS_STOPPED
     assert assistant.text().startswith("part0 ") and len(assistant.text()) < len("".join(fake.tokens))
-    last = win.store.get(win.current_chat_id()).messages[-1]
-    assert last.role == "assistant" and last.status == STATUS_STOPPED
+    last = win.store.get_messages(win.current_chat_id())[-1]
+    assert last.role == "assistant" and last.status == "stopped"
     assert "(stopped)" not in last.content  # the marker is never sent back to the model
 
 
@@ -173,7 +173,7 @@ def test_regenerate_replaces_last_answer(qtbot, make_window, fake):
     assert len(bodies) == 2
     assert bodies[1]["messages"][0]["role"] == "system"
     assert [m["content"] for m in bodies[1]["messages"][1:]] == ["question"]
-    stored = win.store.get(win.current_chat_id()).messages
+    stored = win.store.get_messages(win.current_chat_id())
     assert [(m.role, m.content) for m in stored] == [("user", "question"), ("assistant", "Second answer")]
 
 

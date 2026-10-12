@@ -1,11 +1,11 @@
-"""DEMO ONLY in-memory content for Phase 3 (no model, no database).
+"""DEMO ONLY in-memory content (no model, no database).
 
-Replaced by real Ollama answers in Phase 4 and SQLite history in Phase 5.
+Used by ``--demo`` and screenshot mode, which always run on an InMemoryChatStore.
 """
 
 from __future__ import annotations
 
-from app.backend.memory_store import ChatMessage, InMemoryChatStore
+from app.backend.chat_store import ChatMessage, ChatStore
 
 DEMO_STATUS = "Demo response · no model connected"
 DEMO_PROJECT_NAME = "welcome-site"
@@ -129,20 +129,19 @@ WELCOME_CHAT_TITLE = "Create Welcome HTML File"
 WELCOME_PROMPT = "create a welcome html file web"
 
 
-def seed_demo_store(store: InMemoryChatStore) -> str:
+def seed_demo_store(store: ChatStore) -> str:
     """Fill the store with demo chats. Returns the id of the most recent chat."""
     for title in DEMO_RECENTS:
-        chat = store.create(title)
+        chat = store.create_chat(title)
         store.add_message(chat.id, ChatMessage("user", f"Help me with: {title.lower()}"))
         store.add_message(
             chat.id,
-            ChatMessage("assistant", f"_Demo history for **{title}**. Real answers arrive in Phase 4._",
-                        status=DEMO_STATUS),
+            ChatMessage("assistant", f"_Demo history for **{title}**. No model is used in demo mode._"),
         )
-    welcome = store.create(WELCOME_CHAT_TITLE)
+    welcome = store.create_chat(WELCOME_CHAT_TITLE)
     store.add_message(welcome.id, ChatMessage("user", WELCOME_PROMPT))
     store.add_message(
         welcome.id,
-        ChatMessage("assistant", DEMO_ANSWER, files=list(DEMO_ANSWER_FILES), status=DEMO_STATUS),
+        ChatMessage("assistant", DEMO_ANSWER, files=list(DEMO_ANSWER_FILES)),
     )
     return welcome.id
