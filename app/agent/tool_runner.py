@@ -45,6 +45,22 @@ _COMMIT_MESSAGE = re.compile(r"^[^\x00-\x1f`$|;&<>]{1,200}$")
 GIT_READ_ONLY = {"status", "diff", "log"}
 PYTEST_BLOCKED_FLAGS = {"-p", "--pyargs", "--rootdir", "--confcutdir", "--basetemp", "-c", "--override-ini", "-o"}
 WINDOWS_KILL = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "taskkill.exe"
+JDK_TOOLS = ("java", "javac")
+JDK_FOLDERS = ("Microsoft/jdk-*", "Eclipse Adoptium/jdk-*", "Java/jdk-*", "Zulu/zulu-*")
+SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", "venv", ".venv", "node_modules", "out", "build", "dist", "target"}
+
+
+def find_jdk_tool(program: str) -> str | None:
+    """java/javac from JAVA_HOME or a standard JDK folder (works right after a JDK install, before PATH refresh)."""
+    suffix = ".exe" if sys.platform == "win32" else ""
+    candidates: list[Path] = []
+    home = os.environ.get("JAVA_HOME")
+    if home:
+        candidates.append(Path(home) / "bin" / f"{program}{suffix}")
+    base = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+    for pattern in JDK_FOLDERS:
+        candidates += [jdk / "bin" / f"{program}{suffix}" for jdk in sorted(base.glob(pattern), reverse=True)]
+    return next((str(c) for c in candidates if c.is_file()), None)
 
 
 class ToolUnavailableError(AppError):
@@ -268,6 +284,8 @@ class ToolRunner:
         if program == "python" and not getattr(sys, "frozen", False):
             return sys.executable  # the app's own interpreter (the venv during development)
         found = shutil.which(program)
+        if not found and program in JDK_TOOLS:
+            found = find_jdk_tool(program)
         if not found:
             raise ToolUnavailableError(f"'{program}' is not installed or not on PATH, so the command was not run.")
         return found
@@ -299,6 +317,21 @@ class ToolRunner:
             process.kill()
         except OSError:
             pass
+
+    def run_sequence(self, commands: Sequence[Sequence[str]]) -> list[CommandResult]:
+        """Check every command first, then run them in order, stopping at the first failure."""
+        checked = [self.check(argv) for argv in commands]
+        for argv in checked:
+            self.resolve_executable(argv[0])
+        results: list[CommandResult] = []
+        for argv in checked:
+            if self._aborted:
+                break
+            result = self.run(argv)
+            results.append(result)
+            if not result.ok:
+                break
+        return results
 
     def abort(self) -> None:
         """Stop the running command and its children (thread-safe; used by the Stop button)."""
@@ -347,13 +380,47 @@ class ToolRunner:
                              timed_out, duration, cut_out or cut_err)
 
 
-def default_test_command(root: Path) -> list[str] | None:
-    """The test command for a project, judged from its files (None when unknown)."""
+def _project_files(root: Path, suffix: str) -> list[Path]:
+    return sorted(p for p in root.rglob(f"*{suffix}")
+                  if p.is_file() and not any(part in SKIP_DIRS for part in p.relative_to(root).parts[:-1]))
+
+
+_PACKAGE = re.compile(r"^\s*package\s+([A-Za-z_][\w.]*)\s*;", re.MULTILINE)
+_MAIN = re.compile(r"public\s+static\s+void\s+main\s*\(")
+
+
+def java_test_classes(root: Path) -> list[str]:
+    """Fully qualified names of plain Java test classes (name ends/starts with Test and has main)."""
+    found: list[str] = []
+    for path in _project_files(root, ".java"):
+        stem = path.stem
+        if not (stem.endswith("Test") or stem.endswith("Tests") or stem.startswith("Test")):
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if not _MAIN.search(text):
+            continue
+        package = _PACKAGE.search(text)
+        found.append(f"{package.group(1)}.{stem}" if package else stem)
+    return found
+
+
+def default_test_commands(root: Path) -> list[list[str]] | None:
+    """Commands that test a project, judged from its files (None when nothing is testable)."""
     root = Path(root)
-    python_tests = [p for p in root.rglob("*.py") if p.name.startswith("test_") or p.name.endswith("_test.py")]
+    python_tests = [p for p in _project_files(root, ".py") if p.name.startswith("test_") or p.name.endswith("_test.py")]
     if python_tests:
-        return ["python", "-m", "pytest", "-q"]
+        return [["python", "-m", "pytest", "-q"]]
+    sources = [p.relative_to(root).as_posix() for p in _project_files(root, ".java")]
+    if sources:
+        commands = [["javac", "-encoding", "UTF-8", "-d", "out", *sources]]
+        commands += [["java", "-cp", "out", name] for name in java_test_classes(root)]
+        return commands
     return None
+
+
+def default_test_command(root: Path) -> list[str] | None:
+    commands = default_test_commands(root)
+    return commands[0] if commands else None
 
 
 def result_markdown(result: CommandResult) -> str:
@@ -370,3 +437,23 @@ def result_markdown(result: CommandResult) -> str:
     if result.truncated:
         lines += ["", "(Long output was shortened.)"]
     return "\n".join(lines)
+
+
+def results_markdown(results: list[CommandResult], planned: int) -> str:
+    """Chat text for a sequence of commands."""
+    parts = [result_markdown(r) for r in results]
+    if len(results) < planned:
+        parts.append(f"{planned - len(results)} later command(s) were not run because an earlier one failed.")
+    return "\n\n---\n\n".join(parts)
+
+
+def trimmed_failure_output(results: list[CommandResult], max_chars: int) -> str:
+    """The failing command's output, keeping the end (where errors usually are)."""
+    failed = next((r for r in results if not r.ok), results[-1] if results else None)
+    if failed is None:
+        return ""
+    text = (failed.stdout + "\n" + failed.stderr).strip()
+    if len(text) > max_chars:
+        text = "[... earlier output omitted ...]\n" + text[-max_chars:]
+    status = "timed out" if failed.timed_out else f"exit code {failed.exit_code}"
+    return f"Command: {failed.display()} ({status})\n```text\n{text}\n```"

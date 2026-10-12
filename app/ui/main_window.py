@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QInputDialog,
@@ -40,9 +43,10 @@ from app.agent.project_generator import GenerationResult, ProjectPlan, ProjectWr
 from app.agent.tool_runner import (
     CommandResult,
     ToolRunner,
-    default_test_command,
+    default_test_commands,
     display_command,
-    result_markdown,
+    results_markdown,
+    trimmed_failure_output,
 )
 from app.backend.chat_service import ChatService
 from app.backend.chat_store import (
@@ -66,8 +70,8 @@ from app.errors import (
     ResponseFormatError,
 )
 from app.ui import demo, theme
-from app.ui.agent_widgets import ChangesCard, PlanCard
-from app.ui.dialogs import CommandApprovalDialog
+from app.ui.agent_widgets import ChangesCard, ExportCard, PlanCard
+from app.ui.dialogs import CommandApprovalDialog, SettingsDialog
 from app.ui.chat_view import ChatView
 from app.ui.composer import Composer
 from app.ui.icons import icon_size, load_icon
@@ -81,6 +85,7 @@ from app.ui.workers import (
     OllamaStreamWorker,
     PlanWorker,
     StreamWorker,
+    ExportWorker,
     ToolWorker,
     WorkerHandle,
     start_worker,
@@ -89,7 +94,9 @@ from app.validation.project_validator import validate_project
 
 logger = logging.getLogger(__name__)
 
-EXPORT_PENDING = "Export is coming in Phase 9."
+NO_PROJECT_TO_EXPORT = "This chat has no project to export yet."
+EXPORT_DIR_SETTING = "export_dir"
+COMMAND_TIMEOUT_SETTING = "command_timeout_s"
 TOAST_MS = 2600
 PREVIEW_SHARE = 0.45
 STATUS_LOADING = "Loading model…"
@@ -103,6 +110,15 @@ STATUS_PLANNING = "Planning project…"
 STATUS_PLAN_READY = "Project plan · review it, then click Generate files"
 JOB_CHAT, JOB_PLAN, JOB_GENERATE, JOB_TOOL = "chat", "plan", "generate", "tool"
 STATUS_RUNNING = "Running command…"
+MAX_REPAIR_ROUNDS = 3
+
+
+@dataclass
+class RepairLoop:
+    """Run tests -> model proposes a fix -> user applies it -> re-run (at most MAX_REPAIR_ROUNDS fixes)."""
+
+    commands: list[list[str]]
+    round: int = 0
 PREVIEW_MAX_CHARS = 2_000_000
 
 
@@ -135,6 +151,7 @@ def finished_status(config: AppConfig, stats: StreamStats | None) -> str:
 
 class MainWindow(QMainWindow):
     streamFinished = Signal()
+    exportFinished = Signal(object)  # ExportResult or AppError
     healthChecked = Signal(object)  # HealthResult
 
     def __init__(
@@ -172,8 +189,17 @@ class MainWindow(QMainWindow):
         self._active_writer_root: Path | None = None
         self.plan_cards: list[PlanCard] = []
         self.command_results: list[CommandResult] = []
+        self._repair: dict[str, RepairLoop] = {}
+        self._active_commands: list[list[str]] = []
         # Asks the user to approve a command (command text, working dir) -> bool. Tests replace it.
         self.approver: Callable[[str, str], bool] = self._ask_approval
+        # Folder pickers and openers; tests replace them.
+        self.folder_chooser: Callable[[str], str | None] = self._choose_folder
+        self.folder_opener: Callable[[str], None] = self._open_folder
+        self.settings_editor: Callable[[str, float], tuple[str, int] | None] = self._edit_settings
+        self._export_handle: WorkerHandle | None = None
+        self._export_as_zip = False
+        self.export_cards: list[ExportCard] = []
         self.changes_cards: list[ChangesCard] = []
         self._current_chat_id: str | None = None
         self._expanded = False
@@ -226,6 +252,7 @@ class MainWindow(QMainWindow):
             self.sidebar.set_projects([demo.DEMO_PROJECT_NAME])
             self.select_chat(demo.seed_demo_store(self.store))
         else:
+            self._load_saved_settings()
             self._refresh_projects()
             self.restore_last_chat()
 
@@ -253,7 +280,7 @@ class MainWindow(QMainWindow):
         more = QMenu(self.more_button)
         self.rename_action = more.addAction("Rename chat", self._rename_current)
         self.run_tests_action = more.addAction("Run project tests", self.run_project_tests)
-        self.export_zip_action = more.addAction("Export ZIP", self._export_pending)
+        self.export_zip_action = more.addAction("Export ZIP", lambda: self.export_project(as_zip=True))
         more.addSeparator()
         self.delete_action = more.addAction("Delete chat", self._delete_current)
         self.more_button.setMenu(more)
@@ -282,17 +309,17 @@ class MainWindow(QMainWindow):
         sb.deleteRequested.connect(self._ask_delete)
         sb.projectSelected.connect(self.open_project)
         sb.generatedProjectsRequested.connect(self.open_preview)
-        sb.settingsRequested.connect(lambda: self.show_toast("Settings arrive in a later phase."))
+        sb.settingsRequested.connect(self.open_settings)
 
         self.composer.sendRequested.connect(self.submit_prompt)
         self.composer.stopRequested.connect(self.stop_generation)
 
-        self.export_button.clicked.connect(self._export_pending)
+        self.export_button.clicked.connect(lambda: self.export_project(as_zip=False))
         self.files_button.clicked.connect(self.toggle_preview)
 
         self.preview.closeRequested.connect(self.close_preview)
         self.preview.expandToggled.connect(self.set_preview_expanded)
-        self.preview.exportRequested.connect(lambda _path: self._export_pending())
+        self.preview.exportRequested.connect(lambda _path: self.export_project(as_zip=False))
 
     # --- chats -----------------------------------------------------------------
     # Every store call runs here on the UI thread. A StorageError never escapes:
@@ -574,7 +601,7 @@ class MainWindow(QMainWindow):
     def _add_assistant_widget(self, status: str | None) -> AssistantMessage:
         widget = self.chat_view.add_assistant_message(status)
         widget.fileOpened.connect(self.open_file)
-        widget.exportRequested.connect(self._export_pending)
+        widget.exportRequested.connect(lambda: self.export_project(as_zip=False))
         widget.regenerateRequested.connect(self.regenerate)
         widget.thumbsDownToggled.connect(lambda checked, w=widget: self._on_feedback(w, checked))
         return widget
@@ -818,7 +845,10 @@ class MainWindow(QMainWindow):
                 message.message_id = saved.id
         self._end_stream()
         if chat_id and not self.demo_mode:
-            self._offer_changes(chat_id, text)
+            offered = self._offer_changes(chat_id, text)
+            if not offered and chat_id in self._repair and self._repair[chat_id].round > 0:
+                self._repair.pop(chat_id, None)
+                self.show_toast("The model did not propose a usable fix, so the repair loop stopped.")
 
     def _plan_finished(self, result: object) -> None:
         chat_id = self._active_chat_id
@@ -885,6 +915,10 @@ class MainWindow(QMainWindow):
         card.retry_button.hide()
 
     def run_project_command(self, argv: list[str]) -> bool:
+        """Run one command (allowlist check, then approval). Not part of a repair loop."""
+        return self.run_project_commands([argv])
+
+    def run_project_commands(self, commands: list[list[str]]) -> bool:
         """Allowlist check, then the user's approval, then run in a worker. Never runs model text."""
         chat_id = self._current_chat_id
         if self.is_busy() or chat_id is None:
@@ -896,25 +930,34 @@ class MainWindow(QMainWindow):
             return False
         if project is None:
             self.show_toast("This chat has no project to run commands in.")
+            self._repair.pop(chat_id, None)
             return False
         try:
             runner = ToolRunner(Path(project.path), self.config.command_timeout_s)
-            checked = runner.check(argv)  # refused here even if the user would approve it
-            runner.resolve_executable(checked[0])
+            checked = [runner.check(argv) for argv in commands]  # refused here even if the user would approve
+            for argv in checked:
+                runner.resolve_executable(argv[0])
         except AppError as exc:
             logger.warning("Command refused: %s", exc.full_text())
             self._command_refused(exc.message)
+            self._repair.pop(chat_id, None)
             return False
-        command = display_command(checked)
-        if not self.approver(command, str(runner.root)):
-            self._command_refused(CommandRejectedError(f"You rejected the command, so it was not run: {command}").message)
+        command_text = "\n".join(display_command(argv) for argv in checked)
+        if not self.approver(command_text, str(runner.root)):
+            self._command_refused(
+                CommandRejectedError(f"You rejected the command, so it was not run: {command_text}").message)
+            self._repair.pop(chat_id, None)
             return False
         worker = ToolWorker(runner, checked)
-        self._begin_stream(chat_id, worker, f"{STATUS_RUNNING} {command}", JOB_TOOL)
+        self._active_commands = checked
+        self._begin_stream(chat_id, worker, f"{STATUS_RUNNING} {display_command(checked[0])}", JOB_TOOL)
         return True
 
     def run_project_tests(self) -> bool:
+        """Run the project's tests; if they fail, start the repair loop (at most 3 model-proposed fixes)."""
         chat_id = self._current_chat_id
+        if self.is_busy():
+            return False
         try:
             project = self.store.latest_project_for_chat(chat_id) if chat_id else None
         except AppError as exc:
@@ -923,50 +966,99 @@ class MainWindow(QMainWindow):
         if project is None:
             self.show_toast("This chat has no project to test.")
             return False
-        argv = default_test_command(Path(project.path))
-        if argv is None:
-            self.show_toast("No tests were found in this project.")
+        commands = default_test_commands(Path(project.path))
+        if commands is None:
+            self.show_toast("No tests or sources were found in this project.")
             return False
-        return self.run_project_command(argv)
+        self._repair[chat_id] = RepairLoop(commands)
+        return self.run_project_commands(commands)
+
+    def repair_round(self, chat_id: str) -> int:
+        loop = self._repair.get(chat_id)
+        return loop.round if loop else 0
 
     def _tool_finished(self, result: object) -> None:
         chat_id = self._active_chat_id
         message = self._active_message
+        planned = len(self._active_commands)
         self._end_stream()
-        if not isinstance(result, CommandResult):
+        results = [r for r in result if isinstance(r, CommandResult)] if isinstance(result, list) else []
+        if not results:
             return
-        self.command_results.append(result)
-        text = result_markdown(result)
-        status = "Command passed" if result.ok else "Command failed"
+        self.command_results.extend(results)
+        ok = all(r.ok for r in results) and len(results) == planned
+        text = results_markdown(results, planned)
+        loop = self._repair.get(chat_id) if chat_id else None
+        next_round = 0
+        if loop is not None:
+            if ok:
+                done = f" after {loop.round} repair round{'s' if loop.round != 1 else ''}" if loop.round else ""
+                text += f"\n\n**All checks passed{done}.**"
+                self._repair.pop(chat_id, None)
+            elif loop.round >= MAX_REPAIR_ROUNDS:
+                text += (f"\n\n**Stopped after {MAX_REPAIR_ROUNDS} repair rounds; the checks still fail.** "
+                         "Nothing more was changed.")
+                self._repair.pop(chat_id, None)
+            else:
+                loop.round += 1
+                next_round = loop.round
+                text += f"\n\n**Repair round {next_round} of {MAX_REPAIR_ROUNDS}:** asking the model for a fix…"
         if message is not None:
             message.set_text(text)
-            message.finish(status=status)
+            message.finish(status="Checks passed" if ok else "Checks failed")
         if chat_id:
-            saved = self._save_reply(chat_id, text, "complete" if result.ok else "error")
+            saved = self._save_reply(chat_id, text, "complete" if ok else "error")
             if saved is not None and message is not None:
                 message.message_id = saved.id
+        if next_round and chat_id:
+            QTimer.singleShot(0, lambda: self._start_repair(chat_id, results, next_round))
 
-    def _offer_changes(self, chat_id: str, answer: str) -> None:
+    def _start_repair(self, chat_id: str, results: list[CommandResult], round_no: int) -> None:
+        """Send the trimmed failure output and the relevant files to the model; the fix comes back as a diff."""
+        if self.is_busy() or chat_id != self._current_chat_id or chat_id not in self._repair:
+            self._repair.pop(chat_id, None)
+            return
+        try:
+            project = self.store.latest_project_for_chat(chat_id)
+            if project is None:
+                raise AppError("This chat has no project to repair.")
+            budget = self.service.context_budget_chars()
+            failure = trimmed_failure_output(results, budget // 3)
+            files = read_project_files(Path(project.path), budget * 2)
+            context = f"{failure}\n\n" + build_context(failure, project.name, files, [], budget - len(failure))
+            text = f"Repair round {round_no}/{MAX_REPAIR_ROUNDS}: the checks failed. Please fix the code."
+            messages = self.service.send(chat_id, text, context)
+        except AppError as exc:
+            self._repair.pop(chat_id, None)
+            self._storage_failed(exc, card=True)
+            return
+        self.chat_view.add_user_message(text)
+        self._refresh_sidebar()
+        self._dispatch(chat_id, messages, JOB_CHAT)
+
+    def _offer_changes(self, chat_id: str, answer: str) -> bool:
         """If the answer proposes edits to the chat's project, show them as a Changes card."""
         try:
             project = self.store.latest_project_for_chat(chat_id)
         except AppError:
-            return
+            return False
         if project is None or not Path(project.path).is_dir():
-            return
-        changes = parse_changes(answer)
+            return False
+        changes = parse_changes(answer, list_project_files(Path(project.path)))
         if not changes:
-            return
+            return False
         pending, problems = prepare_changes(Path(project.path), changes)
         if not pending:
             self.show_toast("The suggested changes could not be used: " + "; ".join(problems.values())[:200])
-            return
+            return False
         card = ChangesCard(project.name, pending, problems)
-        card.applyRequested.connect(lambda c=card, p=project: self.apply_suggested_changes(c, p))
+        card.applyRequested.connect(lambda c=card, p=project, cid=chat_id: self.apply_suggested_changes(c, p, cid))
+        card.cancelRequested.connect(lambda cid=chat_id: self._repair.pop(cid, None))
         self.chat_view.add_card(card)
         self.changes_cards.append(card)
+        return True
 
-    def apply_suggested_changes(self, card: ChangesCard, project: ProjectRecord) -> bool:
+    def apply_suggested_changes(self, card: ChangesCard, project: ProjectRecord, chat_id: str | None = None) -> bool:
         root = Path(project.path)
         try:
             written = apply_changes(root, card.pending)
@@ -974,6 +1066,8 @@ class MainWindow(QMainWindow):
             message = exc.message if isinstance(exc, AppError) else str(exc)
             logger.warning("Applying changes failed: %s", message)
             card.set_state(f"Not applied: {message}")
+            if chat_id:
+                self._repair.pop(chat_id, None)
             return False
         card.set_state(f"Applied to {len(written)} file{'s' if len(written) != 1 else ''}; originals backed up.")
         try:
@@ -981,6 +1075,9 @@ class MainWindow(QMainWindow):
         except AppError as exc:
             logger.warning("Could not update the project: %s", exc.full_text())
         self._show_project_files(project.name, root)
+        loop = self._repair.get(chat_id) if chat_id else None
+        if loop is not None and chat_id == self._current_chat_id:
+            QTimer.singleShot(0, lambda: self.run_project_commands(loop.commands))  # re-run (asks approval again)
         return True
 
     def _on_cancelled(self) -> None:
@@ -1140,8 +1237,101 @@ class MainWindow(QMainWindow):
         self.toast.show()
         self._toast_timer.start(TOAST_MS)
 
-    def _export_pending(self) -> None:
-        self.show_toast(EXPORT_PENDING)
+    # --- export and settings ------------------------------------------------------------
+    def _choose_folder(self, start: str) -> str | None:
+        chosen = QFileDialog.getExistingDirectory(self, "Export to folder", start)
+        return chosen or None
+
+    def _open_folder(self, folder: str) -> None:
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+
+    def export_dir(self) -> str:
+        try:
+            saved = self.store.get_setting(EXPORT_DIR_SETTING)
+        except AppError:
+            saved = None
+        return saved or str(self.config.export_dir)
+
+    def export_project(self, as_zip: bool = False) -> bool:
+        """Export the current chat's project to a chosen folder (or a verified ZIP) in a worker."""
+        if self._export_handle is not None:
+            self.show_toast("An export is already running.")
+            return False
+        chat_id = self._current_chat_id
+        try:
+            project = self.store.latest_project_for_chat(chat_id) if chat_id else None
+        except AppError as exc:
+            self._storage_failed(exc)
+            return False
+        if project is None or not Path(project.path).is_dir():
+            self.show_toast(NO_PROJECT_TO_EXPORT)
+            return False
+        chosen = self.folder_chooser(self.export_dir())
+        if not chosen:
+            return False
+        try:
+            self.store.set_setting(EXPORT_DIR_SETTING, chosen)
+        except AppError as exc:
+            logger.warning("Could not remember the export folder: %s", exc.full_text())
+        worker = ExportWorker(Path(project.path), Path(chosen), project.name, as_zip)
+        self._export_as_zip = as_zip
+        # bound methods (not lambdas) so Qt delivers these on the UI thread
+        worker.finished.connect(self._on_exported)
+        worker.error.connect(self._on_export_error)
+        self._export_handle = start_worker(worker, self)
+        self.show_toast("Creating and checking the ZIP…" if as_zip else "Exporting the project…")
+        return True
+
+    def _on_exported(self, result: object) -> None:
+        self._export_handle = None
+        card = ExportCard(result, self._export_as_zip)
+        card.openRequested.connect(self._open_export_folder)
+        self.chat_view.add_card(card)
+        self.export_cards.append(card)
+        self.exportFinished.emit(result)
+
+    def _open_export_folder(self, folder: str) -> None:
+        self.folder_opener(folder)
+
+    def _on_export_error(self, error: object) -> None:
+        self._export_handle = None
+        err = error if isinstance(error, AppError) else AppError(str(error))
+        logger.warning("Export failed: %s", err.full_text())
+        card = self.chat_view.add_error(f"Export failed: {err.message}")
+        card.retry_button.hide()
+        self.exportFinished.emit(err)
+
+    def _load_saved_settings(self) -> None:
+        try:
+            raw = self.store.get_setting(COMMAND_TIMEOUT_SETTING)
+        except AppError:
+            raw = None
+        if raw:
+            try:
+                self.config = replace(self.config, command_timeout_s=float(max(1, min(3600, int(float(raw))))))
+            except ValueError:
+                logger.warning("Ignoring a bad saved command timeout: %r", raw)
+
+    def _edit_settings(self, export_dir: str, timeout_s: float) -> tuple[str, int] | None:
+        dialog = SettingsDialog(export_dir, timeout_s, self)
+        if dialog.exec() == SettingsDialog.DialogCode.Accepted:
+            return dialog.values()
+        return None
+
+    def open_settings(self) -> None:
+        values = self.settings_editor(self.export_dir(), self.config.command_timeout_s)
+        if values is None:
+            return
+        export_dir, timeout_s = values
+        try:
+            if export_dir:
+                self.store.set_setting(EXPORT_DIR_SETTING, export_dir)
+            self.store.set_setting(COMMAND_TIMEOUT_SETTING, str(int(timeout_s)))
+        except AppError as exc:
+            self._storage_failed(exc)
+            return
+        self.config = replace(self.config, command_timeout_s=float(timeout_s))
+        self.show_toast("Settings saved.")
 
     # --- lifecycle -------------------------------------------------------------
     def closeEvent(self, event) -> None:  # noqa: N802
@@ -1153,6 +1343,9 @@ class MainWindow(QMainWindow):
         if self._health_handle is not None:
             self._health_handle.wait(CLOSE_WAIT_MS)
             self._health_handle = None
+        if self._export_handle is not None:
+            self._export_handle.wait(CLOSE_WAIT_MS)
+            self._export_handle = None
         super().closeEvent(event)
 
     def sizeHint(self) -> QSize:  # noqa: N802

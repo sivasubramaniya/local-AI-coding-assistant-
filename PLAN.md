@@ -121,16 +121,14 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 8 — Testing and Debugging Workflow  `[ ]`
+## Phase 8 — Testing and Debugging Workflow  `[x]`
 
-- [ ] Unit and integration test coverage across modules
-- [ ] Mocks for unavailable services
-- [ ] Generate a sample Java calculator project
-- [ ] Run approved compilers and tests if installed (`javac`, `java`, `pytest`)
-- [ ] Feed errors back to the model for fixes; re-run affected tests
-- [ ] Clearly separate mock results from real results
-
-**Deliverable:** observable generate → test → repair loop.
+- [x] Unit and integration test coverage across modules (`pytest --cov`: 88% of app code; QThread code is not traced)
+- [x] Mocks for unavailable services (scripted FakeOllama, loopback fake server, JDK-less skips)
+- [x] Generate a sample Java calculator project through the app's own generator (REAL model, `scripts/run_java_sample.py`)
+- [x] Run approved compilers and tests (`javac`, `java`, `python -m pytest`) via the allowlisted runner; JDK 21 installed with winget
+- [x] Feed errors back to the model for fixes; diff shown; apply after confirmation; re-run (max 3 rounds, each in the chat)
+- [x] Clearly separate mock results from real results (REAL/MOCK labels in reports, `integration` marker)
 
 ---
 
@@ -202,3 +200,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-12 | 5 | SQLite chat history (stdlib sqlite3): schema v1, migrations, corrupt/newer DB handling, ChatStore protocol, restart restore, feedback, `--check` DB report; fixed stale worker signal ending the next stream | 252 passed (MOCK), 3 integration deselected |
 | 2026-10-12 | 6 | Coding agent: task classifier, two-step project generator (plan JSON + per-file blocks, retry), plan/changes cards, edit flow with diffs and backups, project context for debug/refactor, path validator, DB migration v2 (message_files) | 333 passed (MOCK); real generator test: see Phase 7 row |
 | 2026-10-12 | 7 | Security: path validator hardening + attack suite, project validator, allowlisted tool runner (shell=False, timeouts, tree kill), approval flow + Run project tests; config `command_timeout_s`. Phase 6 real generator integration test passed (4.1 min) | 536 passed, 1 skipped (symlink privilege) (MOCK); 1 integration passed (REAL) |
+| 2026-10-12 | 8 | Debug workflow: Java/Python test detection, command sequences, JDK discovery, repair loop (max 3 rounds, diff + confirm + re-run), pytest-cov; generator fixes found by REAL runs (request + earlier files in file prompts, lenient Markdown, path-before-block edits). REAL: Java sample generated and passed (run 2), REAL repair fixed an injected bug in 1 round; run 1 (before fixes) failed and is kept as evidence | 601 passed, 1 skipped (MOCK); coverage 88%; REAL: Java sample PASS, repair demo PASS |

@@ -203,7 +203,10 @@ def test_huge_output_is_truncated(project):
 def test_missing_tool_reports_clearly(runner, monkeypatch):
     import shutil
 
+    from app.agent import tool_runner
+
     monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(tool_runner, "find_jdk_tool", lambda name: None)
     with pytest.raises(ToolUnavailableError) as info:
         runner.resolve_executable("javac")
     assert "not installed" in info.value.message
@@ -227,3 +230,40 @@ def test_shell_false_means_no_metacharacter_interpretation(project):
     from app.agent import tool_runner
 
     assert tool_runner.SHELL_METACHARACTERS >= set("&|;`$<>^%")
+
+
+def _has_jdk():
+    from app.agent.tool_runner import ToolRunner as Runner
+
+    try:
+        Runner.resolve_executable("javac")
+        Runner.resolve_executable("java")
+        return True
+    except ToolUnavailableError:
+        return False
+
+
+@pytest.mark.skipif(not _has_jdk(), reason="no JDK installed")
+def test_real_javac_and_java_sequence(tmp_path):
+    from app.agent.tool_runner import default_test_commands
+
+    src = tmp_path / "j" / "src" / "demo"
+    src.mkdir(parents=True)
+    (src / "Adder.java").write_text("package demo;\npublic class Adder { static int add(int a, int b) "
+                                    "{ return a + b; } }\n")
+    (src / "AdderTest.java").write_text(
+        "package demo;\npublic class AdderTest {\n  public static void main(String[] args) {\n"
+        "    if (Adder.add(2, 3) != 5) { System.out.println(\"FAIL\"); System.exit(1); }\n"
+        "    System.out.println(\"PASS add\");\n  }\n}\n")
+    root = tmp_path / "j"
+    runner = ToolRunner(root, timeout_s=120)
+    results = runner.run_sequence(default_test_commands(root))
+    assert [r.ok for r in results] == [True, True], results[-1].stderr
+    assert "PASS add" in results[1].stdout
+    (src / "Adder.java").write_text("package demo;\npublic class Adder { static int add(int a, int b) "
+                                    "{ return a - b; } }\n")
+    results = runner.run_sequence(default_test_commands(root))
+    assert results[0].ok and results[1].exit_code == 1 and "FAIL" in results[1].stdout
+    (src / "Adder.java").write_text("package demo;\npublic class Adder { broken }\n")
+    results = runner.run_sequence(default_test_commands(root))
+    assert len(results) == 1 and not results[0].ok  # java was not run after javac failed

@@ -91,3 +91,59 @@ def ask_storage_recovery(message: str, offer_fresh: bool, parent: QWidget | None
     if clicked is memory:
         return RECOVER_MEMORY
     return RECOVER_QUIT
+
+
+class SettingsDialog(QDialog):
+    """Export folder, command timeout and a theme placeholder. Values are saved by the caller."""
+
+    def __init__(self, export_dir: str, command_timeout_s: float, parent: QWidget | None = None) -> None:
+        from PySide6.QtWidgets import QComboBox, QFileDialog, QFormLayout, QLineEdit, QSpinBox
+
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setModal(True)
+        self.setMinimumWidth(560)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 22, 24, 20)
+        title = QLabel("Settings")
+        title.setObjectName("dialogTitle")
+        layout.addWidget(title)
+        form = QFormLayout()
+        row = QHBoxLayout()
+        self.export_edit = QLineEdit(export_dir)
+        browse = QPushButton("Browse…")
+        browse.setObjectName("rejectButton")
+        browse.clicked.connect(lambda: self._browse(QFileDialog))
+        row.addWidget(self.export_edit, 1)
+        row.addWidget(browse)
+        form.addRow("Export folder", row)
+        self.timeout_spin = QSpinBox()
+        self.timeout_spin.setRange(1, 3600)
+        self.timeout_spin.setSuffix(" s")
+        self.timeout_spin.setValue(int(command_timeout_s))
+        form.addRow("Command timeout", self.timeout_spin)
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["Dark", "Light (coming later)"])
+        self.theme_combo.model().item(1).setEnabled(False)
+        form.addRow("Theme", self.theme_combo)
+        layout.addLayout(form)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton("Cancel")
+        cancel.setObjectName("rejectButton")
+        save = QPushButton("Save")
+        save.setObjectName("approveButton")
+        cancel.clicked.connect(self.reject)
+        save.clicked.connect(self.accept)
+        buttons.addWidget(cancel)
+        buttons.addWidget(save)
+        layout.addSpacing(8)
+        layout.addLayout(buttons)
+
+    def _browse(self, file_dialog) -> None:
+        chosen = file_dialog.getExistingDirectory(self, "Export folder", self.export_edit.text())
+        if chosen:
+            self.export_edit.setText(chosen)
+
+    def values(self) -> tuple[str, int]:
+        return self.export_edit.text().strip(), self.timeout_spin.value()

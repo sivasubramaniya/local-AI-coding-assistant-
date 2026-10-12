@@ -140,3 +140,36 @@ class ChangesCard(_DecisionCard):
                                    "agentText"))
         if not pending:
             self.apply_button.setEnabled(False)
+
+
+class ExportCard(QFrame):
+    """Success card for an export: where it went, what was left out, and an Open folder button."""
+
+    openRequested = Signal(str)
+
+    def __init__(self, result, as_zip: bool, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("agentCard")
+        self.result = result
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(6)
+        kind = "ZIP archive created and verified" if as_zip else "Project exported and checked"
+        self.title_label = _label(f"✓ {kind}: {len(result.files)} files", "agentTitle")
+        layout.addWidget(self.title_label)
+        self.path_label = _label(str(result.destination), "agentText")
+        layout.addWidget(self.path_label)
+        notes = []
+        if result.skipped:
+            notes.append(f"Left out {len(result.skipped)} file(s) (caches, build output, backups or secrets).")
+        if result.readme_added:
+            notes.append("Build, run and test instructions were added to README.md.")
+        for note in notes:
+            layout.addWidget(_label(note, "agentText"))
+        row = QHBoxLayout()
+        row.addStretch(1)
+        self.open_button = _button("Open folder", "secondaryButton")
+        folder = result.destination.parent if as_zip else result.destination
+        self.open_button.clicked.connect(lambda: self.openRequested.emit(str(folder)))
+        row.addWidget(self.open_button)
+        layout.addLayout(row)

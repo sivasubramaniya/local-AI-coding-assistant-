@@ -210,3 +210,44 @@ def test_writer_rejects_escapes_and_overwrites(tmp_path):
     with pytest.raises(GenerationError):
         writer.write("a.py", "2")
     assert (writer.root / "a.py").read_text() == "1"
+
+
+# --- quality fixes found by the REAL Java sample run (Phase 8) ------------------------------
+def test_file_prompts_repeat_the_request_and_show_earlier_files(tmp_path):
+    model = ScriptedModel(plan_json(), block("def add(a, b):\n    return a + b"), block("from calc import add"),
+                          "````markdown\n# Calc\n````")
+    generator = ProjectGenerator(model, SYSTEM)
+    plan = generator.make_plan("A calculator WITHOUT external libraries")
+    assert plan.request == "A calculator WITHOUT external libraries"
+    generator.generate(plan, ProjectWriter(tmp_path, "c"))
+    second_prompt = model.calls[2][1]["content"]
+    assert second_prompt.startswith("Original request: A calculator WITHOUT external libraries")
+    assert "Already written `calc.py`" in second_prompt and "return a + b" in second_prompt
+    assert "use exactly their class, function and method names" in second_prompt
+
+
+def test_earlier_files_respect_the_budget():
+    from app.agent.project_generator import earlier_files_text
+
+    text = earlier_files_text({"a.py": "x" * 100, "big.py": "y" * 50_000, "README.md": "# r"}, max_chars=1000)
+    assert "Already written `a.py`" in text and "`big.py` was written too but is not shown" in text
+    assert "README" not in text
+
+
+@pytest.mark.parametrize("answer, expected", [
+    ("````markdown\n# Calc\n\n```\njava Main\n```\n````", "# Calc\n\n```\njava Main\n```\n"),
+    ("```markdown\n# Calc\n\n```\njava Main\n```\n```", "# Calc\n\n```\njava Main\n```\n"),
+    ("```markdown\n# Calc\nRun it.", "# Calc\nRun it.\n"),
+    ("# Calc\nNo fence at all.", "# Calc\nNo fence at all.\n"),
+])
+def test_markdown_files_are_parsed_leniently(answer, expected):
+    from app.agent.project_generator import parse_markdown_file
+
+    assert parse_markdown_file(answer) == expected
+
+
+def test_empty_markdown_still_fails():
+    from app.agent.project_generator import parse_markdown_file
+
+    with pytest.raises(ResponseFormatError):
+        parse_markdown_file("```markdown\n```")

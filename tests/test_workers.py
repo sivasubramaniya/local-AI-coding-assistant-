@@ -117,3 +117,13 @@ def test_ui_thread_stays_responsive_while_streaming(qtbot):
     timer.stop()
     assert handle.wait(2000)
     assert len(ticks) >= 10, f"UI timer fired only {len(ticks)} times"
+
+
+def test_shutdown_workers_stops_and_joins_running_threads(qtbot):
+    from app.ui.workers import FakeStreamWorker, live_worker_count, shutdown_workers, start_worker
+
+    handle = start_worker(FakeStreamWorker("word " * 2000, delay_s=0.05))
+    qtbot.waitUntil(handle.is_running, timeout=2000)
+    assert shutdown_workers(timeout_ms=3000) == 0
+    assert not handle.is_running()
+    assert live_worker_count() == 0

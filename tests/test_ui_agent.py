@@ -150,13 +150,13 @@ def test_sidebar_project_opens_files(qtbot, session, fake):
 def test_partial_failure_is_listed_and_successes_kept(qtbot, session, fake, tmp_config):
     win = session()
     card = _plan(qtbot, win, fake)
-    fake.replies = [HELLO, "no block", "still no block"]
+    fake.replies = ["no block", "still no block", README]  # hello.py fails twice, README works
     with qtbot.waitSignal(win.streamFinished, timeout=10000):
         card.apply_button.click()
     root = tmp_config.projects_dir / "hello-tool"
-    assert (root / "hello.py").is_file() and not (root / "README.md").exists()
+    assert not (root / "hello.py").exists() and (root / "README.md").is_file()
     summary = [w for w in win.chat_view.items if isinstance(w, AssistantMessage)][-1]
-    assert "1 of 2 files written" in summary.text() and "README.md" in summary.text()
+    assert "1 of 2 files written" in summary.text() and "hello.py" in summary.text()
     assert win.store.list_projects()[0].status == "partial"
 
 

@@ -119,6 +119,31 @@ def live_worker_count() -> int:
     return len(_get_reaper().live)
 
 
+def shutdown_workers(timeout_ms: int = 5000) -> int:
+    """Cancel and join every live worker thread (call before the QApplication goes away).
+
+    Qt aborts the process if a QThread object is destroyed while its thread still runs,
+    so the app and the test session call this on the way out. Returns threads still running.
+    """
+    reaper = _get_reaper()
+    for handle in list(reaper.live):
+        try:
+            handle.cancel()
+        except RuntimeError:
+            pass
+    still_running = 0
+    for handle in list(reaper.live):
+        try:
+            if not handle.wait(timeout_ms):
+                still_running += 1
+                logger.warning("A worker thread did not stop within %d ms", timeout_ms)
+                continue
+        except RuntimeError:  # the C++ object is already gone
+            pass
+        reaper.live.discard(handle)
+    return still_running
+
+
 def start_worker(worker: StreamWorker, parent: QObject | None = None) -> WorkerHandle:
     """Move ``worker`` to a new QThread and start it. Call from the UI thread."""
     reaper = _get_reaper()
@@ -294,16 +319,30 @@ class GenerateWorker(_AgentWorker):
 
 
 class ToolWorker(StreamWorker):
-    """Runs one already-approved, allowlisted command. Returns a CommandResult."""
+    """Runs already-approved, allowlisted commands in order. Returns a list of CommandResult."""
 
-    def __init__(self, runner, argv: list[str]) -> None:
+    def __init__(self, runner, commands: list[list[str]]) -> None:
         super().__init__()
         self._runner = runner
-        self._argv = list(argv)
+        self._commands = [list(c) for c in commands]
 
     def cancel(self) -> None:
         super().cancel()
         self._runner.abort()
 
     def work(self) -> object:
-        return self._runner.run(self._argv)
+        return self._runner.run_sequence(self._commands)
+
+
+class ExportWorker(StreamWorker):
+    """Exports a project folder or a verified ZIP (file work only, no database)."""
+
+    def __init__(self, root, export_dir, name: str, as_zip: bool) -> None:
+        super().__init__()
+        self._args = (root, export_dir, name)
+        self._as_zip = as_zip
+
+    def work(self) -> object:
+        from app.export.project_exporter import export_folder, export_zip
+
+        return (export_zip if self._as_zip else export_folder)(*self._args)

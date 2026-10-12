@@ -82,7 +82,7 @@ def test_approved_tests_run_and_output_is_shown_and_saved(qtbot, win, project):
         assert win.run_project_tests()
     message = [w for w in win.chat_view.items if isinstance(w, AssistantMessage)][-1]
     assert "Exit code 0" in message.text() and "1 passed" in message.text()
-    assert message.status_label.text() == "Command passed"
+    assert message.status_label.text() == "Checks passed"
     assert win.command_results[-1].ok
     stored = win.store.get_messages(win.current_chat_id())[-1]
     assert stored.role == "assistant" and "Exit code 0" in stored.content
@@ -93,9 +93,11 @@ def test_failing_tests_are_reported_as_failed(qtbot, win, project):
     win.approver = lambda command, cwd: True
     with qtbot.waitSignal(win.streamFinished, timeout=60000):
         win.run_project_tests()
-    message = [w for w in win.chat_view.items if isinstance(w, AssistantMessage)][-1]
-    assert message.status_label.text() == "Command failed" and "Exit code 1" in message.text()
-    assert win.store.get_messages(win.current_chat_id())[-1].status == "error"
+    message = [w for w in win.chat_view.items if isinstance(w, AssistantMessage)][0]
+    assert message.status_label.text() == "Checks failed" and "Exit code 1" in message.text()
+    assert "Repair round 1 of 3" in message.text()
+    stored = [m for m in win.store.get_messages(win.current_chat_id()) if "Exit code 1" in m.content]
+    assert stored and stored[0].status == "error"
 
 
 def test_no_project_means_no_command(win):

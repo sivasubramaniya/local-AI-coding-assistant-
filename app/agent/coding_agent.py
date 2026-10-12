@@ -177,23 +177,84 @@ _PATH_INFO = re.compile(r"(?:^|\s)(?:path|file|filename|title)=[\"']?([^\s\"']+)
 _DIFF_HEADER = re.compile(r"^\+\+\+ (?:b/)?(\S+)", re.MULTILINE)
 
 
-def parse_changes(answer: str) -> list[FileChange]:
-    """File changes proposed in an answer (later blocks for the same path win)."""
-    blocks, _unclosed = fenced_blocks(answer)
+_PATH_LABEL = re.compile(r"^[\s>*_#`\-]*(?:(?:file|path|filename)\s*:\s*)?[`*_]*([\w./\\-]+\.\w{1,10})[`*_:]*\s*$",
+                         re.IGNORECASE)
+_PATH_COMMENT = re.compile(r"^\s*(?://|#|<!--|/\*|--)\s*(?:file|path|filename)?\s*:?\s*([\w./\\-]+\.\w{1,10})\s*(?:-->|\*/)?\s*$",
+                           re.IGNORECASE)
+
+
+def _resolve_label(candidate: str, known: dict[str, str]) -> str | None:
+    """A path label -> a safe project path ('Calculator.java' maps to a unique known path)."""
+    try:
+        path = validate_relative_path(candidate.replace("\\", "/"))
+    except PathValidationError:
+        return None
+    if not known:
+        return path
+    if path.lower() in known:
+        return known[path.lower()]
+    by_name = [p for p in known.values() if Path(p).name.lower() == Path(path).name.lower()]
+    return by_name[0] if len(by_name) == 1 else path
+
+
+def _labelled_blocks(answer: str):
+    """Yield (block, label) where label is the path written on the line before the block, if any."""
+    blocks, _ = fenced_blocks(answer)
+    lines = answer.splitlines()
+    starts = [i for i, line in enumerate(lines) if re.match(r"^ {0,3}(`{3,}|~{3,})", line)]
+    opening_lines: list[int] = []
+    inside = False
+    for i in starts:
+        if not inside:
+            opening_lines.append(i)
+        inside = not inside
+    for index, block in enumerate(blocks):
+        label = None
+        if index < len(opening_lines):
+            j = opening_lines[index] - 1
+            while j >= 0 and not lines[j].strip():
+                j -= 1
+            if j >= 0:
+                match = _PATH_LABEL.match(lines[j])
+                label = match.group(1) if match else None
+        yield block, label
+
+
+def parse_changes(answer: str, known_paths: list[str] | None = None) -> list[FileChange]:
+    """File changes proposed in an answer (later blocks for the same path win).
+
+    A block's path comes from ``path=...`` in its info string, the path written on the line
+    before it (the format the system prompt asks for), or a first-line path comment. Blocks
+    without a path (commands, examples) are ignored. Only safe relative paths are kept.
+    """
+    known = {p.lower(): p for p in (known_paths or [])}
     changes: dict[str, FileChange] = {}
-    for block in blocks:
+    for block, label in _labelled_blocks(answer):
         info = block.info
         match = _PATH_INFO.search(info)
-        if match:
-            try:
-                path = validate_relative_path(match.group(1))
-            except PathValidationError as exc:
-                logger.warning("Ignoring change with unsafe path: %s", exc.message)
-                continue
-            changes[path] = FileChange(path, content=block.content.rstrip("\n") + "\n")
-        elif info.split()[:1] in (["diff"], ["patch"]):
+        lang = (info.split() or [""])[0].lower()
+        if lang in ("diff", "patch") and not match:
             for path, diff in _split_diff(block.content):
                 changes[path] = FileChange(path, diff=diff)
+            continue
+        if lang in ("bash", "sh", "shell", "powershell", "ps1", "cmd", "bat", "console", "text"):
+            continue
+        content = block.content
+        candidate = match.group(1) if match else label
+        if candidate is None:
+            first = content.splitlines()[0] if content.strip() else ""
+            comment = _PATH_COMMENT.match(first)
+            if comment:
+                candidate = comment.group(1)
+        if candidate is None:
+            continue
+        path = _resolve_label(candidate, known)
+        if path is None:
+            logger.warning("Ignoring change with unsafe path: %s", candidate[:80])
+            continue
+        if not match and not known and label is not None and "/" not in path and "." not in path:
+            continue
+        changes[path] = FileChange(path, content=content.rstrip("\n") + "\n")
     return list(changes.values())
 
 

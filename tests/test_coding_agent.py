@@ -124,3 +124,40 @@ def test_build_context_puts_mentioned_files_first_and_respects_budget(project):
 def test_build_context_with_attachment_only():
     context = build_context("what does this do?", None, {}, [("app.py", "print(1)")], max_chars=1000)
     assert "Attached file app.py" in context and EDIT_INSTRUCTIONS not in context
+
+
+
+# --- path labels (format from the system prompt; found by the REAL Java sample run) ---------
+KNOWN = ["src/calculator/Calculator.java", "src/calculator/CalculatorTest.java", "README.md"]
+
+
+@pytest.mark.parametrize("label", [
+    "src/calculator/Calculator.java",
+    "**src/calculator/Calculator.java**",
+    "`src/calculator/Calculator.java`",
+    "### src/calculator/Calculator.java",
+    "File: src/calculator/Calculator.java",
+    "Calculator.java",  # unique file name -> its known path
+    "src\\calculator\\Calculator.java",
+])
+def test_path_on_the_line_before_the_block(label):
+    answer = f"Here is the fix.\n\n{label}\n```java\nclass Calculator {{}}\n```\n"
+    changes = parse_changes(answer, KNOWN)
+    assert [(c.path, c.content) for c in changes] == [("src/calculator/Calculator.java", "class Calculator {}\n")]
+
+
+def test_first_line_path_comment():
+    answer = "```java\n// src/calculator/CalculatorTest.java\nclass CalculatorTest {}\n```"
+    assert [c.path for c in parse_changes(answer, KNOWN)] == ["src/calculator/CalculatorTest.java"]
+
+
+def test_unlabelled_and_command_blocks_are_ignored():
+    answer = ("Compile with:\n```powershell\njavac -d out src/calculator/Calculator.java\n```\n"
+              "Example:\n```java\nnew Calculator().add(1, 2);\n```\n"
+              "run.ps1\n```powershell\nRemove-Item x\n```")
+    assert parse_changes(answer, KNOWN) == []
+
+
+def test_unsafe_label_is_ignored():
+    answer = "../../evil.java\n```java\nclass Evil {}\n```"
+    assert parse_changes(answer, KNOWN) == []

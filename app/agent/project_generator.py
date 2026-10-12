@@ -15,7 +15,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
@@ -25,6 +25,7 @@ from app.validation.path_validator import PathValidator, safe_name, validate_rel
 logger = logging.getLogger(__name__)
 
 MAX_FILES = 15
+EARLIER_FILES_CHARS = 12_000  # earlier generated files shown to later file calls (keeps APIs consistent)
 PLAN_KEYS = ("project_name", "description", "language", "files", "run_instructions", "test_command")
 ChatFn = Callable[[list[dict]], str]
 
@@ -43,6 +44,7 @@ class ProjectPlan:
     files: tuple[PlannedFile, ...]
     run_instructions: str
     test_command: str
+    request: str = ""  # the user's original request (repeated in every file call)
 
     def to_markdown(self) -> str:
         lines = [f"**Project plan: {self.project_name}**", "", self.description, "",
@@ -103,12 +105,16 @@ Rules:
 Request:
 {request}"""
 
-FILE_INSTRUCTIONS = """Project: {name} ({language})
+FILE_INSTRUCTIONS = """Original request: {request}
+
+Project: {name} ({language})
 Description: {description}
 All files in the project:
 {file_list}
-
+{earlier}
 Write the complete content of the file `{path}` (purpose: {purpose}).
+It must work with the files already written above: use exactly their class, function and method names.
+Follow the original request exactly (for example, do not add libraries it rules out).
 Reply with exactly ONE fenced code block that contains the whole file and nothing else.
 {fence_hint}Do not use placeholders; the file must be complete."""
 
@@ -120,12 +126,33 @@ def plan_messages(request: str, system_prompt: str) -> list[dict]:
             {"role": "user", "content": PLAN_INSTRUCTIONS.format(max_files=MAX_FILES, request=request.strip())}]
 
 
-def file_messages(plan: ProjectPlan, planned: PlannedFile, system_prompt: str) -> list[dict]:
-    is_markdown = PurePosixPath(planned.path).suffix.lower() in (".md", ".markdown")
+def _is_markdown(path: str) -> bool:
+    return PurePosixPath(path).suffix.lower() in (".md", ".markdown")
+
+
+def earlier_files_text(earlier: dict[str, str], max_chars: int = EARLIER_FILES_CHARS) -> str:
+    """Already generated files (newest last), as many as fit in ``max_chars``."""
+    parts: list[str] = []
+    used = 0
+    for path, content in earlier.items():
+        if _is_markdown(path):
+            continue
+        block = f"\nAlready written `{path}`:\n````\n{content.rstrip()}\n````\n"
+        if used + len(block) > max_chars:
+            parts.append(f"\n(`{path}` was written too but is not shown here.)\n")
+            continue
+        parts.append(block)
+        used += len(block)
+    return "".join(parts)
+
+
+def file_messages(plan: ProjectPlan, planned: PlannedFile, system_prompt: str,
+                  earlier: dict[str, str] | None = None) -> list[dict]:
     content = FILE_INSTRUCTIONS.format(
-        name=plan.project_name, language=plan.language, description=plan.description,
-        file_list="\n".join(f"- {f.path}: {f.purpose}" for f in plan.files),
-        path=planned.path, purpose=planned.purpose, fence_hint=MARKDOWN_FENCE_HINT if is_markdown else "",
+        request=plan.request or plan.description, name=plan.project_name, language=plan.language,
+        description=plan.description, file_list="\n".join(f"- {f.path}: {f.purpose}" for f in plan.files),
+        earlier=earlier_files_text(earlier or {}), path=planned.path, purpose=planned.purpose,
+        fence_hint=MARKDOWN_FENCE_HINT if _is_markdown(planned.path) else "",
     )
     return [{"role": "system", "content": system_prompt}, {"role": "user", "content": content}]
 
@@ -234,6 +261,29 @@ def parse_file_block(text: str) -> str:
     return content.rstrip("\n") + "\n"
 
 
+_FENCE_LINE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def parse_markdown_file(text: str) -> str:
+    """Markdown files (documentation) are parsed strictly first, then leniently.
+
+    Models often nest ``` fences inside a Markdown block or use a shorter outer fence.
+    The lenient path drops one outer fence line at the start and end and keeps the rest.
+    """
+    try:
+        return parse_file_block(text)
+    except ResponseFormatError:
+        lines = text.strip().splitlines()
+        if lines and _FENCE_LINE.match(lines[0]):
+            lines = lines[1:]
+        if lines and _FENCE_LINE.match(lines[-1]) and not lines[-1].strip().strip("`~"):
+            lines = lines[:-1]
+        content = "\n".join(lines).strip("\n")
+        if not content.strip():
+            raise
+        return content + "\n"
+
+
 # --- generation --------------------------------------------------------------------
 class ProjectWriter:
     """Creates ``<projects_dir>/<safe-name>[-N]`` and writes files through the path validator."""
@@ -279,10 +329,11 @@ class ProjectGenerator:
     def make_plan(self, request: str) -> ProjectPlan:
         plan = self._ask(plan_messages(request, self._system_prompt), parse_plan, "ONLY the JSON object")
         assert isinstance(plan, ProjectPlan)
-        return plan
+        return replace(plan, request=request.strip())
 
-    def generate_file(self, plan: ProjectPlan, planned: PlannedFile) -> str:
-        content = self._ask(file_messages(plan, planned, self._system_prompt), parse_file_block,
+    def generate_file(self, plan: ProjectPlan, planned: PlannedFile, earlier: dict[str, str] | None = None) -> str:
+        parse = parse_markdown_file if _is_markdown(planned.path) else parse_file_block
+        content = self._ask(file_messages(plan, planned, self._system_prompt, earlier), parse,
                             "exactly one complete fenced code block")
         assert isinstance(content, str)
         return content
@@ -295,6 +346,7 @@ class ProjectGenerator:
         cancelled: Callable[[], bool] = lambda: False,
     ) -> GenerationResult:
         result = GenerationResult(plan, writer.root)
+        earlier: dict[str, str] = {}
         total = len(plan.files)
         for index, planned in enumerate(plan.files, 1):
             if cancelled():
@@ -302,12 +354,13 @@ class ProjectGenerator:
                 break
             progress(index, total, planned.path)
             try:
-                content = self.generate_file(plan, planned)
+                content = self.generate_file(plan, planned, earlier)
                 if cancelled():
                     result.cancelled = True
                     break
                 writer.write(planned.path, content)
                 result.written.append(planned.path)
+                earlier[planned.path] = content
             except AppError as exc:
                 if cancelled():
                     result.cancelled = True

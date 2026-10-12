@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from app.ui import demo
-from app.ui.main_window import EXPORT_PENDING, MainWindow
+from app.ui.main_window import NO_PROJECT_TO_EXPORT, MainWindow
 from app.ui.message_widgets import AssistantMessage, UserBubble
 
 pytestmark = pytest.mark.gui
@@ -119,7 +119,7 @@ def test_top_bar_toggle_and_export_toast(window):
     window.files_button.click()
     assert not window.is_preview_open()
     window.export_button.click()
-    assert window.toast.isVisible() and window.toast.text() == EXPORT_PENDING
+    assert window.toast.isVisible() and window.toast.text() == NO_PROJECT_TO_EXPORT
 
 
 def test_new_chat_rename_delete(window, monkeypatch):
