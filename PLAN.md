@@ -91,15 +91,17 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 6 — Coding Agent and Project Generator  `[ ]`
+## Phase 6 — Coding Agent and Project Generator  `[x]`
 
-- [ ] Task classifier (generate, debug, explain, refactor, project, other)
-- [ ] Project planning step (file list before contents)
-- [ ] Structured file output format from the model (for example JSON or fenced blocks with paths)
-- [ ] Parser that rejects malformed or incomplete responses
-- [ ] Create and edit files (through the validator once Phase 7 is done)
-- [ ] Show planned file changes to the user before writing
-- [ ] Progress reporting and failure reporting
+- [x] Task classifier, rules only (generate, debug, explain, refactor, review, project, off_topic)
+- [x] Project planning step: strict JSON plan (file list before contents), one corrective retry
+- [x] Structured file output: one call per file, exactly one fenced block (four backticks for Markdown)
+- [x] Parser that rejects malformed, partial or unsafe responses; partial failures listed, successes kept
+- [x] Create files through the path validator (created early in `app/validation/path_validator.py`)
+- [x] Edit files: full-file or unified-diff suggestions shown as a diff; Apply writes with `.bak-<ts>` backups
+- [x] Plan card (Apply/Cancel) before writing; progress per file; Stop keeps written files
+- [x] Projects saved under `projects_dir/<safe-name>[-N]`, linked to the chat (DB v2 `message_files`)
+- [x] Model text is never executed (test asserts no subprocess is started)
 
 **Deliverable:** local multi-file project generator.
 
@@ -198,3 +200,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-11 | 4 | Ollama client (httpx, streaming, abort), chat service (system prompt + trimming), health checks, real worker, `--demo`, loopback-only URL, Modelfile; fixed worker lifetime crash; QtWebEngine installed | 193 passed, 3 integration skipped (model missing) |
 | 2026-10-12 | 1+4 | Real-model verification: `ollama create qwen2.5-coder-14b -f .\ollama\Modelfile`, modelfile inspected, timed request (2.7 tok/s), integration tests | 3 integration passed (REAL) |
 | 2026-10-12 | 5 | SQLite chat history (stdlib sqlite3): schema v1, migrations, corrupt/newer DB handling, ChatStore protocol, restart restore, feedback, `--check` DB report; fixed stale worker signal ending the next stream | 252 passed (MOCK), 3 integration deselected |
+| 2026-10-12 | 6 | Coding agent: task classifier, two-step project generator (plan JSON + per-file blocks, retry), plan/changes cards, edit flow with diffs and backups, project context for debug/refactor, path validator, DB migration v2 (message_files) | 333 passed (MOCK); real generator test: see Phase 7 row |

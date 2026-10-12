@@ -263,6 +263,15 @@ class PreviewPanel(QFrame):
         if self._current not in self._files:
             self.show_empty()
 
+    def clear_project(self) -> None:
+        """No project: empty file list and tree."""
+        self._project_name = ""
+        self._files = {}
+        self.file_menu.clear()
+        self.tree.clear()
+        self.tree_toggle.hide()
+        self.show_empty()
+
     def open_file(self, path: str) -> bool:
         if path not in self._files:
             logger.warning("Preview requested for unknown file %r", path)

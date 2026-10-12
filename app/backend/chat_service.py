@@ -78,16 +78,34 @@ class ChatService:
         self.config = config
         self.system_prompt = system_prompt if system_prompt is not None else load_system_prompt()
 
-    def _build(self, history: list[ChatMessage], user_text: str) -> list[dict]:
-        return build_messages(history, user_text, self.system_prompt, self.config.num_ctx)
+    def _build(self, history: list[ChatMessage], user_text: str, context: str | None = None) -> list[dict]:
+        latest = f"{user_text}\n\n{context}" if context else user_text
+        return build_messages(history, latest, self.system_prompt, self.config.num_ctx)
 
-    def send(self, chat_id: str, text: str) -> list[dict]:
-        """Store the user message (the store sets the auto-title) and return the request messages."""
+    def context_budget_chars(self) -> int:
+        """Characters available for project files/attachments in one request (about half the prompt room)."""
+        prompt_room = self.config.num_ctx - reply_reserve(self.config.num_ctx) - estimate_tokens(self.system_prompt)
+        return max(2000, prompt_room * CHARS_PER_TOKEN // 2)
+
+    def add_user_message(self, chat_id: str, text: str) -> ChatMessage:
+        """Store a user message without building a request (project generation flow)."""
+        return self.store.add_message(chat_id, ChatMessage("user", text))
+
+    def send(self, chat_id: str, text: str, context: str | None = None) -> list[dict]:
+        """Store the user message (the store sets the auto-title) and return the request messages.
+
+        ``context`` (project files, attachments) is added to the request only; the stored
+        message is exactly what the user typed.
+        """
         history = self.store.get_messages(chat_id)
         self.store.add_message(chat_id, ChatMessage("user", text))
-        return self._build(history, text)
+        return self._build(history, text, context)
 
-    def regenerate(self, chat_id: str) -> list[dict]:
+    def last_user_text(self, chat_id: str) -> str | None:
+        messages = [m for m in self.store.get_messages(chat_id) if m.role == "user"]
+        return messages[-1].content if messages else None
+
+    def regenerate(self, chat_id: str, context: str | None = None) -> list[dict]:
         """Rebuild the request for the last user message, ignoring any reply after it.
 
         Also used for Retry after an error. The old reply stays stored until the new
@@ -98,7 +116,7 @@ class ChatService:
             messages.pop()
         if not messages:
             raise StorageError("There is no message to answer again.")
-        return self._build(messages[:-1], messages[-1].content)
+        return self._build(messages[:-1], messages[-1].content, context)
 
     def record_reply(
         self,
@@ -108,10 +126,11 @@ class ChatService:
         files: list[str] | None = None,
         eval_count: int | None = None,
         tokens_per_sec: float | None = None,
+        project_id: str | None = None,
     ) -> ChatMessage | None:
         """Save the assistant reply, replacing any earlier reply to the same user message."""
         if not text or not self.store.chat_exists(chat_id):
             return None
         message = ChatMessage("assistant", text, files=list(files or []), status=status,
-                              eval_count=eval_count, tokens_per_sec=tokens_per_sec)
+                              eval_count=eval_count, tokens_per_sec=tokens_per_sec, project_id=project_id)
         return self.store.replace_reply(chat_id, message)

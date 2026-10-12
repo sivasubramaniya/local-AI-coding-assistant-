@@ -218,3 +218,76 @@ class HealthCheckWorker(StreamWorker):
             return HealthResult(ConnectionState.DISCONNECTED, exc.message)
         finally:
             self._client.close()
+
+
+class _AgentWorker(StreamWorker):
+    """Base for project workers: model calls stream through the worker's own client."""
+
+    progress = Signal(str)
+
+    def __init__(self, client: OllamaClient, system_prompt: str) -> None:
+        super().__init__()
+        self._client = client
+        self._system_prompt = system_prompt
+        self._label = ""
+
+    def cancel(self) -> None:
+        super().cancel()
+        self._client.abort()
+
+    def _chat(self, messages: list[dict]) -> str:
+        pieces: list[str] = []
+        for piece in self._client.stream_chat(messages, self._cancel_event):
+            pieces.append(piece)
+            if len(pieces) % PROGRESS_EVERY == 0:
+                self.progress.emit(f"{self._label} ({len(pieces)} tokens)")
+        return "".join(pieces)
+
+
+PROGRESS_EVERY = 20
+
+
+class PlanWorker(_AgentWorker):
+    """Step 1 of project generation: ask for the JSON plan. Returns a ProjectPlan (or None if stopped)."""
+
+    def __init__(self, client: OllamaClient, request: str, system_prompt: str) -> None:
+        super().__init__(client, system_prompt)
+        self._request = request
+        self._label = "Planning project…"
+
+    def work(self) -> object:
+        from app.agent.project_generator import ProjectGenerator
+
+        try:
+            plan = ProjectGenerator(self._chat, self._system_prompt).make_plan(self._request)
+            return None if self.is_cancelled() else plan
+        except AppError:
+            if self.is_cancelled():
+                return None
+            raise
+        finally:
+            self._client.close()
+
+
+class GenerateWorker(_AgentWorker):
+    """Step 2: one model call per planned file, written through the ProjectWriter. Returns a GenerationResult."""
+
+    def __init__(self, client: OllamaClient, plan, writer, system_prompt: str) -> None:
+        super().__init__(client, system_prompt)
+        self._plan = plan
+        self._writer = writer
+        self.result = None  # kept on the worker so a stopped run still reports written files
+
+    def _on_file(self, index: int, total: int, path: str) -> None:
+        self._label = f"Writing {index}/{total}: {path}"
+        self.progress.emit(self._label)
+
+    def work(self) -> object:
+        from app.agent.project_generator import ProjectGenerator
+
+        try:
+            generator = ProjectGenerator(self._chat, self._system_prompt)
+            self.result = generator.generate(self._plan, self._writer, self._on_file, self.is_cancelled)
+            return self.result
+        finally:
+            self._client.close()

@@ -26,13 +26,14 @@ STATUSES = ("complete", "stopped", "error")
 FEEDBACK_BAD = "bad"
 FEEDBACK_VALUES = (None, FEEDBACK_BAD)
 LAST_CHAT_SETTING = "last_chat_id"
+PROJECT_STATUSES = ("planned", "generating", "complete", "partial", "failed", "cancelled")
 
 
 @dataclass
 class ChatMessage:
     role: str  # "user" or "assistant"
     content: str
-    files: list[str] = field(default_factory=list)  # in-memory only until Phase 6 links projects
+    files: list[str] = field(default_factory=list)  # project-relative paths shown as file cards
     status: str = "complete"
     eval_count: int | None = None
     tokens_per_sec: float | None = None
@@ -40,6 +41,7 @@ class ChatMessage:
     id: int | None = None
     seq: int | None = None
     created_at: str | None = None
+    project_id: str | None = None  # the project the file cards belong to
 
 
 @dataclass
@@ -96,6 +98,11 @@ def check_message(message: ChatMessage) -> None:
         raise StorageError("Could not save the message.", detail="content must be text")
 
 
+def check_project_status(status: str) -> None:
+    if status not in PROJECT_STATUSES:
+        raise StorageError("Could not save the project.", detail=f"invalid status {status!r}")
+
+
 def check_feedback(value: str | None) -> None:
     if value not in FEEDBACK_VALUES:
         raise StorageError("Could not save the feedback.", detail=f"invalid feedback {value!r}")
@@ -134,7 +141,18 @@ class ChatStore(Protocol):
 
     def set_feedback(self, message_id: int, value: str | None) -> None: ...
 
-    def list_projects(self) -> list[ProjectRecord]: ...
+    def list_projects(self) -> list[ProjectRecord]:
+        """Most recently updated first."""
+        ...
+
+    def create_project(self, name: str, path: str, conversation_id: str | None,
+                       status: str = "planned") -> ProjectRecord: ...
+
+    def update_project_status(self, project_id: str, status: str) -> None: ...
+
+    def get_project(self, project_id: str) -> ProjectRecord: ...
+
+    def latest_project_for_chat(self, chat_id: str) -> ProjectRecord | None: ...
 
     def get_setting(self, key: str, default: str | None = None) -> str | None: ...
 

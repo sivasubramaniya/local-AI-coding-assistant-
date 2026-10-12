@@ -20,6 +20,7 @@ from app.backend.chat_store import (
     Conversation,
     ProjectRecord,
     check_feedback,
+    check_project_status,
     check_message,
     clean_title,
     title_from_prompt,
@@ -33,6 +34,11 @@ logger = logging.getLogger(__name__)
 
 def _conversation(row: sqlite3.Row) -> Conversation:
     return Conversation(row["id"], row["title"], row["model_name"], row["created_at"], row["updated_at"])
+
+
+def _project(row: sqlite3.Row) -> ProjectRecord:
+    return ProjectRecord(row["id"], row["conversation_id"], row["name"], row["path"], row["status"],
+                         row["created_at"], row["updated_at"])
 
 
 def _message(row: sqlite3.Row) -> ChatMessage:
@@ -128,7 +134,17 @@ class SqliteChatRepository:
         self.get_chat(chat_id)
         rows = self._read("load the messages",
                           "SELECT * FROM messages WHERE conversation_id = ? ORDER BY seq", (chat_id,))
-        return [_message(r) for r in rows]
+        messages = [_message(r) for r in rows]
+        file_rows = self._read(
+            "load the message files",
+            "SELECT f.message_id, f.path, f.project_id FROM message_files f JOIN messages m ON m.id = f.message_id"
+            " WHERE m.conversation_id = ? ORDER BY f.message_id, f.position", (chat_id,))
+        by_id = {m.id: m for m in messages}
+        for row in file_rows:
+            message = by_id[row["message_id"]]
+            message.files.append(row["path"])
+            message.project_id = row["project_id"]
+        return messages
 
     def _insert_message(self, conn: sqlite3.Connection, chat_id: str, message: ChatMessage) -> ChatMessage:
         now = self._now()
@@ -141,11 +157,14 @@ class SqliteChatRepository:
             (chat_id, seq, message.role, message.content, message.status, message.eval_count,
              message.tokens_per_sec, message.feedback, now),
         )
+        for position, path in enumerate(message.files):
+            conn.execute("INSERT INTO message_files (message_id, position, path, project_id) VALUES (?, ?, ?, ?)",
+                         (cursor.lastrowid, position, path, message.project_id))
         self._touch(conn, chat_id, now)
         return ChatMessage(
             role=message.role, content=message.content, files=list(message.files), status=message.status,
             eval_count=message.eval_count, tokens_per_sec=message.tokens_per_sec, feedback=message.feedback,
-            id=cursor.lastrowid, seq=seq, created_at=now,
+            id=cursor.lastrowid, seq=seq, created_at=now, project_id=message.project_id,
         )
 
     def _touch(self, conn: sqlite3.Connection, chat_id: str, now: str) -> None:
@@ -197,8 +216,40 @@ class SqliteChatRepository:
     # --- projects and settings ------------------------------------------------------
     def list_projects(self) -> list[ProjectRecord]:
         rows = self._read("load the projects", "SELECT * FROM projects ORDER BY updated_at DESC, rowid DESC")
-        return [ProjectRecord(r["id"], r["conversation_id"], r["name"], r["path"], r["status"],
-                              r["created_at"], r["updated_at"]) for r in rows]
+        return [_project(r) for r in rows]
+
+    def create_project(self, name: str, path: str, conversation_id: str | None,
+                       status: str = "planned") -> ProjectRecord:
+        check_project_status(status)
+        now = self._now()
+        project_id = str(uuid.uuid4())
+        with self._tx("save the project") as conn:
+            if conversation_id is not None:
+                self._require_chat(conn, conversation_id)
+            conn.execute(
+                "INSERT INTO projects (id, conversation_id, name, path, status, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)", (project_id, conversation_id, name, path, status, now, now))
+        return ProjectRecord(project_id, conversation_id, name, path, status, now, now)
+
+    def update_project_status(self, project_id: str, status: str) -> None:
+        check_project_status(status)
+        with self._tx("update the project") as conn:
+            cursor = conn.execute("UPDATE projects SET status = ?, updated_at = ? WHERE id = ?",
+                                  (status, self._now(), project_id))
+            if cursor.rowcount == 0:
+                raise StorageError("That project no longer exists.", detail=f"project id {project_id!r}")
+
+    def get_project(self, project_id: str) -> ProjectRecord:
+        rows = self._read("load the project", "SELECT * FROM projects WHERE id = ?", (project_id,))
+        if not rows:
+            raise StorageError("That project no longer exists.", detail=f"project id {project_id!r}")
+        return _project(rows[0])
+
+    def latest_project_for_chat(self, chat_id: str) -> ProjectRecord | None:
+        rows = self._read("load the project",
+                          "SELECT * FROM projects WHERE conversation_id = ? ORDER BY created_at DESC, rowid DESC"
+                          " LIMIT 1", (chat_id,))
+        return _project(rows[0]) if rows else None
 
     def get_setting(self, key: str, default: str | None = None) -> str | None:
         rows = self._read("load a setting", "SELECT value FROM app_settings WHERE key = ?", (key,))

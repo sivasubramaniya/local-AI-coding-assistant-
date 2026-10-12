@@ -269,11 +269,16 @@ class Sidebar(QFrame):
         return view
 
     # --- data ----------------------------------------------------------------
-    def set_projects(self, names: list[str]) -> None:
+    def set_projects(self, projects: list[str] | list[tuple[str, str]]) -> None:
+        """``projects`` is a list of names, or of (id, name); projectSelected emits the id."""
         self.project_model.clear()
-        for name in names:
+        names = []
+        for entry in projects:
+            project_id, name = entry if isinstance(entry, tuple) else (entry, entry)
+            names.append(name)
             item = QStandardItem(name)
-            item.setData(name, ID_ROLE)
+            item.setData(project_id, ID_ROLE)
+            item.setToolTip(name)
             item.setData(load_icon("folder", theme.TEXT_PRIMARY, 20), Qt.ItemDataRole.DecorationRole)
             self.project_model.appendRow(item)
         self.project_list.setFixedHeight(len(names) * theme.NAV_ROW_HEIGHT + 2)

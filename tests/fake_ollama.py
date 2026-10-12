@@ -29,6 +29,10 @@ def done_line(stats: dict | None = None) -> bytes:
     return json.dumps(payload).encode() + b"\n"
 
 
+def _pieces(text: str, size: int = 24) -> list[str]:
+    return [text[i:i + size] for i in range(0, len(text), size)] or [""]
+
+
 def stream_bytes(tokens: list[str], stats: dict | None = None) -> list[bytes]:
     return [content_line(t) for t in tokens] + [done_line(stats)]
 
@@ -41,6 +45,7 @@ class FakeOllama:
         self.version = "0.40.2"
         self.tokens = tokens if tokens is not None else ["Hello", " from", " the", " model."]
         self.raw_chunks: list[bytes] | None = None  # overrides tokens when set
+        self.replies: list[str] = []  # scripted answers, one per /api/chat request (then tokens)
         self.chunk_delay_s = 0.0
         self.down = False
         self.timeout = False
@@ -62,8 +67,11 @@ class FakeOllama:
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handler)
 
-    def _chunks(self):
-        chunks = self.raw_chunks if self.raw_chunks is not None else stream_bytes(self.tokens)
+    def _chunks(self, reply: str | None = None):
+        if reply is not None:
+            chunks = stream_bytes(_pieces(reply))
+        else:
+            chunks = self.raw_chunks if self.raw_chunks is not None else stream_bytes(self.tokens)
         for chunk in chunks:
             if self.chunk_delay_s:
                 time.sleep(self.chunk_delay_s)
@@ -87,8 +95,10 @@ class FakeOllama:
                 return httpx.Response(self.chat_status, json={"error": self.chat_error or "failure"})
             if body["model"] not in self.models:
                 return httpx.Response(404, json={"error": f'model "{body["model"]}" not found, try pulling it first'})
+            with self._lock:
+                reply = self.replies.pop(0) if self.replies else None
             if body.get("stream"):
-                return httpx.Response(200, content=self._chunks(),
+                return httpx.Response(200, content=self._chunks(reply),
                                       headers={"content-type": "application/x-ndjson"})
             return httpx.Response(200, json={"model": body["model"], "done": True,
                                              "message": {"role": "assistant", "content": "".join(self.tokens)},

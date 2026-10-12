@@ -74,6 +74,10 @@ class ChatView(QScrollArea):
         self._items.append(widget)
         return widget
 
+    def add_card(self, widget: QWidget) -> QWidget:
+        """Add any card widget (plan, changes) below the messages."""
+        return self._add(widget)
+
     def add_user_message(self, text: str) -> UserBubble:
         self._stick_to_bottom = True
         return self._add(UserBubble(text))  # type: ignore[return-value]

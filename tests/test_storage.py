@@ -42,29 +42,29 @@ def _add_project(conn, project_id, chat_id):
 
 
 # --- schema ----------------------------------------------------------------------
-def test_schema_created_at_v1_with_pragmas(db_path):
+def test_schema_created_at_latest_with_pragmas(db_path):
     conn = open_database(db_path)
     try:
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        assert {"conversations", "messages", "projects", "app_settings", "schema_version"} <= tables
+        assert {"conversations", "messages", "projects", "app_settings", "schema_version", "message_files"} <= tables
         indexes = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
         assert {"idx_messages_conversation_seq", "idx_conversations_updated"} <= indexes
         rows = conn.execute("SELECT version, applied_at FROM schema_version").fetchall()
-        assert [r[0] for r in rows] == [1] and rows[0][1].endswith("+00:00")
+        assert [r[0] for r in rows] == [1, 2] and rows[0][1].endswith("+00:00")
         assert isinstance(conn.execute("SELECT 1").fetchone(), sqlite3.Row)
     finally:
         conn.close()
-    assert latest_version() == 1
+    assert latest_version() == 2
 
 
 def test_reopen_does_not_reapply(db_path):
     open_database(db_path).close()
     conn = open_database(db_path)
     try:
-        assert conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == 2
     finally:
         conn.close()
 
@@ -244,19 +244,19 @@ def test_invalid_message_rejected_before_write(repo):
 
 
 # --- migrations ----------------------------------------------------------------------
-V2 = (2, "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;\n"
+V_NEXT = (3, "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;\n"
          "CREATE INDEX idx_conversations_pinned ON conversations (pinned);")
 
 
-def test_fake_v2_migration_upgrades_and_keeps_data(db_path):
+def test_fake_next_migration_upgrades_and_keeps_data(db_path):
     repo = SqliteChatRepository.open(db_path)
     chat = repo.create_chat()
     repo.add_message(chat.id, ChatMessage("user", "keep me"))
     repo.close()
 
-    conn = open_database(db_path, [*MIGRATIONS, V2])
+    conn = open_database(db_path, [*MIGRATIONS, V_NEXT])
     try:
-        assert [r[0] for r in conn.execute("SELECT version FROM schema_version ORDER BY version")] == [1, 2]
+        assert [r[0] for r in conn.execute("SELECT version FROM schema_version ORDER BY version")] == [1, 2, 3]
         row = conn.execute("SELECT title, pinned FROM conversations").fetchone()
         assert row["title"] == "Keep me" and row["pinned"] == 0
         assert conn.execute("SELECT content FROM messages").fetchone()[0] == "keep me"
@@ -266,14 +266,14 @@ def test_fake_v2_migration_upgrades_and_keeps_data(db_path):
 
 def test_broken_migration_rolls_back_whole_step(db_path):
     open_database(db_path).close()
-    bad = (2, "ALTER TABLE conversations ADD COLUMN pinned INTEGER;\nTHIS IS NOT SQL;")
+    bad = (3, "ALTER TABLE conversations ADD COLUMN pinned INTEGER;\nTHIS IS NOT SQL;")
     with pytest.raises(StorageError):
         open_database(db_path, [*MIGRATIONS, bad])
     conn = open_database(db_path)
     try:
         columns = [r[1] for r in conn.execute("PRAGMA table_info(conversations)")]
         assert "pinned" not in columns
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 1
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 2
     finally:
         conn.close()
 
@@ -327,9 +327,57 @@ def test_inspect_database_is_read_only(db_path):
     repo.close()
     digest = _sha(db_path)
     info = inspect_database(db_path)
-    assert (info.schema_version, info.chat_count, info.error) == (1, 2, None)
+    assert (info.schema_version, info.chat_count, info.error) == (2, 2, None)
     assert _sha(db_path) == digest
 
 
 def test_repository_schema_version(repo):
-    assert repo.schema_version() == 1
+    assert repo.schema_version() == latest_version() == 2
+
+
+def test_real_v1_database_upgrades_to_v2_and_keeps_data(db_path):
+    v1 = SqliteChatRepository(open_database(db_path, MIGRATIONS[:1]))
+    chat = v1.create_chat()
+    v1._conn.execute(
+        "INSERT INTO messages (conversation_id, seq, role, content, status, created_at)"
+        " VALUES (?, 1, 'user', 'old message', 'complete', '2026-01-01')", (chat.id,))
+    v1.close()
+    repo = SqliteChatRepository.open(db_path)
+    try:
+        assert repo.schema_version() == 2
+        assert [m.content for m in repo.get_messages(chat.id)] == ["old message"]
+        assert repo.get_messages(chat.id)[0].files == []
+    finally:
+        repo.close()
+
+
+# --- projects and message files (v2) ------------------------------------------------
+def test_projects_crud_and_chat_link(repo):
+    chat = repo.create_chat()
+    first = repo.create_project("calc", "C:/p/calc", chat.id, "generating")
+    second = repo.create_project("calc-2", "C:/p/calc-2", chat.id)
+    assert repo.latest_project_for_chat(chat.id).id == second.id
+    repo.update_project_status(first.id, "complete")
+    assert repo.get_project(first.id).status == "complete"
+    assert [p.id for p in repo.list_projects()][0] == first.id  # most recently updated first
+    with pytest.raises(StorageError):
+        repo.update_project_status(first.id, "exploded")
+    with pytest.raises(StorageError):
+        repo.create_project("x", "y", "no-such-chat")
+    with pytest.raises(StorageError):
+        repo.get_project("missing")
+    assert repo.latest_project_for_chat("other") is None
+
+
+def test_message_files_round_trip_and_cascade(repo):
+    chat = repo.create_chat()
+    project = repo.create_project("site", "C:/p/site", chat.id)
+    repo.add_message(chat.id, ChatMessage("user", "make a site"))
+    saved = repo.add_message(chat.id, ChatMessage("assistant", "done", files=["index.html", "css/site.css"],
+                                                  project_id=project.id))
+    restored = repo.get_messages(chat.id)[1]
+    assert restored.files == ["index.html", "css/site.css"] and restored.project_id == project.id
+    assert saved.files == restored.files
+    repo.delete_chat(chat.id)
+    assert repo._conn.execute("SELECT COUNT(*) FROM message_files").fetchone()[0] == 0
+    assert repo.get_project(project.id).conversation_id is None

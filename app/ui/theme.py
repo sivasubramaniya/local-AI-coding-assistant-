@@ -280,6 +280,37 @@ QPushButton#retryButton {{
     padding: 6px 16px;
 }}
 QPushButton#retryButton:hover {{ background: #2A1414; }}
+QFrame#agentCard {{
+    background: {c['bg_card']};
+    border: 1px solid {c['border_card']};
+    border-radius: 14px;
+}}
+QLabel#agentTitle {{ font-weight: 600; font-size: {FONT_MESSAGE}px; background: transparent; }}
+QLabel#agentText {{ color: {c['text_secondary']}; background: transparent; }}
+QPushButton#primaryButton {{
+    background: {c['accent_primary']};
+    color: {c['white']};
+    border: none;
+    border-radius: 14px;
+    padding: 6px 18px;
+    font-weight: 600;
+}}
+QPushButton#primaryButton:hover {{ background: {c['accent_primary_hover']}; }}
+QPushButton#primaryButton:disabled {{ background: {c['accent_disabled']}; color: {c['text_secondary']}; }}
+QPushButton#secondaryButton {{
+    background: transparent;
+    color: {c['text_primary']};
+    border: 1px solid {c['border_card']};
+    border-radius: 14px;
+    padding: 6px 16px;
+}}
+QPushButton#secondaryButton:hover {{ background: {c['bg_item_hover']}; }}
+QPushButton#secondaryButton:disabled {{ color: #4A4A4A; }}
+QPlainTextEdit#diffView {{
+    background: {c['bg_code_block']};
+    border: 1px solid {c['border_subtle']};
+    border-radius: 8px;
+}}
 QLabel#toast {{
     background: {c['bg_button_round']};
     border: 1px solid {c['border_card']};

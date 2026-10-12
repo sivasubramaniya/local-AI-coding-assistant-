@@ -68,9 +68,20 @@ CREATE INDEX idx_conversations_updated ON conversations (updated_at DESC);
 CREATE INDEX idx_projects_conversation ON projects (conversation_id);
 """
 
+SCHEMA_V2 = """
+CREATE TABLE message_files (
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    position   INTEGER NOT NULL,
+    path       TEXT NOT NULL,
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    PRIMARY KEY (message_id, position)
+);
+"""
+
 # Ordered (version, SQL). Append new versions; never edit a released one.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, SCHEMA_V1),
+    (2, SCHEMA_V2),  # Phase 6: file cards of generated/edited files
 ]
 
 _SCHEMA_VERSION_SQL = (

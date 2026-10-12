@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -25,14 +26,34 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.agent.coding_agent import (
+    CONTEXT_TASKS,
+    apply_changes,
+    build_context,
+    list_project_files,
+    parse_changes,
+    prepare_changes,
+    read_attachments,
+    read_project_files,
+)
+from app.agent.project_generator import GenerationResult, ProjectPlan, ProjectWriter
 from app.backend.chat_service import ChatService
-from app.backend.chat_store import FEEDBACK_BAD, LAST_CHAT_SETTING, ChatMessage, ChatStore, Conversation
+from app.backend.chat_store import (
+    FEEDBACK_BAD,
+    LAST_CHAT_SETTING,
+    ChatMessage,
+    ChatStore,
+    Conversation,
+    ProjectRecord,
+)
 from app.backend.memory_store import InMemoryChatStore
 from app.backend.ollama_client import OllamaClient, StreamStats
 from app.backend.status import ConnectionState, HealthResult, stub_connection_state
 from app.config import AppConfig
-from app.errors import AppError, ModelNotFoundError, OllamaUnavailableError
+from app.backend.task_classifier import TaskType, classify
+from app.errors import AppError, ModelNotFoundError, OllamaUnavailableError, ResponseFormatError
 from app.ui import demo, theme
+from app.ui.agent_widgets import ChangesCard, PlanCard
 from app.ui.chat_view import ChatView
 from app.ui.composer import Composer
 from app.ui.icons import icon_size, load_icon
@@ -41,8 +62,10 @@ from app.ui.preview_panel import PreviewPanel
 from app.ui.sidebar import Sidebar
 from app.ui.workers import (
     FakeStreamWorker,
+    GenerateWorker,
     HealthCheckWorker,
     OllamaStreamWorker,
+    PlanWorker,
     StreamWorker,
     WorkerHandle,
     start_worker,
@@ -60,6 +83,10 @@ STATUS_FAILED = "Failed"
 STOP_WAIT_MS = 1500
 CLOSE_WAIT_MS = 6000
 DELETE_CONFIRM = "Delete this chat? This cannot be undone."
+STATUS_PLANNING = "Planning project…"
+STATUS_PLAN_READY = "Project plan · review it, then click Generate files"
+JOB_CHAT, JOB_PLAN, JOB_GENERATE = "chat", "plan", "generate"
+PREVIEW_MAX_CHARS = 2_000_000
 
 
 def _top_bar_button(icon: str, tooltip: str, text: str = "") -> QToolButton:
@@ -120,6 +147,14 @@ class MainWindow(QMainWindow):
         self._active_chat_id: str | None = None
         self._got_first_token = False
         self._pending_chat_id: str | None = None
+        self._pending_kind = JOB_CHAT
+        self._job_kind = JOB_CHAT
+        self._active_project: ProjectRecord | None = None
+        self._active_plan_card: PlanCard | None = None
+        self._active_plan: ProjectPlan | None = None
+        self._active_writer_root: Path | None = None
+        self.plan_cards: list[PlanCard] = []
+        self.changes_cards: list[ChangesCard] = []
         self._current_chat_id: str | None = None
         self._expanded = False
 
@@ -224,7 +259,7 @@ class MainWindow(QMainWindow):
         sb.chatSelected.connect(self.select_chat)
         sb.renameRequested.connect(self._ask_rename)
         sb.deleteRequested.connect(self._ask_delete)
-        sb.projectSelected.connect(lambda _name: self.open_preview())
+        sb.projectSelected.connect(self.open_project)
         sb.generatedProjectsRequested.connect(self.open_preview)
         sb.settingsRequested.connect(lambda: self.show_toast("Settings arrive in a later phase."))
 
@@ -262,11 +297,11 @@ class MainWindow(QMainWindow):
 
     def _refresh_projects(self) -> None:
         try:
-            names = [p.name for p in self.store.list_projects()]
+            projects = [(p.id, p.name) for p in self.store.list_projects()]
         except AppError as exc:
             self._storage_failed(exc)
-            names = []
-        self.sidebar.set_projects(names)
+            projects = []
+        self.sidebar.set_projects(projects)
 
     def _set_current(self, chat_id: str | None) -> None:
         self._current_chat_id = chat_id
@@ -317,6 +352,8 @@ class MainWindow(QMainWindow):
                 return None
         self._set_current(chat_id)
         self.chat_view.clear()
+        if not self.demo_mode:
+            self.preview.clear_project()
         self._refresh_sidebar()
         self.composer.input.setFocus()
         return chat_id
@@ -339,6 +376,7 @@ class MainWindow(QMainWindow):
         self.chat_view.clear()
         for message in messages:
             self._render_stored(chat, message)
+        self._load_chat_project(chat_id)
         self._refresh_sidebar()
         QTimer.singleShot(0, self.chat_view.scroll_to_bottom)
 
@@ -438,13 +476,14 @@ class MainWindow(QMainWindow):
             widget.actions.set_thumbs_down(not checked)
 
     def _save_reply(self, chat_id: str, text: str, status: str, files: list[str] | None = None,
-                    stats: StreamStats | None = None) -> ChatMessage | None:
+                    stats: StreamStats | None = None, project_id: str | None = None) -> ChatMessage | None:
         has_stats = stats is not None and stats.eval_count > 0
         try:
             return self.service.record_reply(
                 chat_id, text, status, files,
                 eval_count=stats.eval_count if has_stats else None,
                 tokens_per_sec=round(stats.tokens_per_second, 2) if has_stats else None,
+                project_id=project_id,
             )
         except AppError as exc:
             self._storage_failed(exc, card=chat_id == self._current_chat_id)
@@ -486,6 +525,7 @@ class MainWindow(QMainWindow):
 
     def _resume_pending(self) -> None:
         chat_id, self._pending_chat_id = self._pending_chat_id, None
+        kind, self._pending_kind = self._pending_kind, JOB_CHAT
         if chat_id is None:
             return
         self.composer.set_busy(False)
@@ -495,7 +535,12 @@ class MainWindow(QMainWindow):
             self._show_not_ready()
             return
         try:
-            messages = self.service.regenerate(chat_id)
+            text = self.service.last_user_text(chat_id) or ""
+            if kind == JOB_PLAN:
+                self._start_plan(chat_id, text)
+                return
+            context = self._context_for(chat_id, text, classify(text), [])
+            messages = self.service.regenerate(chat_id, context)
         except AppError as exc:
             self._storage_failed(exc, card=True)
             return
@@ -513,23 +558,47 @@ class MainWindow(QMainWindow):
         widget.thumbsDownToggled.connect(lambda checked, w=widget: self._on_feedback(w, checked))
         return widget
 
+    def _context_for(self, chat_id: str, text: str, task: TaskType, attachments: list[str]) -> str | None:
+        """Project files and attachments for the request (read here, sizes capped)."""
+        budget = self.service.context_budget_chars()
+        try:
+            project = self.store.latest_project_for_chat(chat_id)
+        except AppError as exc:
+            logger.warning("Could not load the chat's project: %s", exc.full_text())
+            project = None
+        attached = read_attachments(attachments, budget) if attachments else []
+        use_project = project is not None and task in CONTEXT_TASKS and Path(project.path).is_dir()
+        if not use_project and not attached:
+            return None
+        files = read_project_files(Path(project.path), budget * 2) if use_project else {}
+        return build_context(text, project.name if use_project else None, files, attached, budget)
+
     def submit_prompt(self, text: str, project_mode: bool = False) -> bool:
         text = text.strip()
         if not text or self.is_busy():
             return False
+        attachments = self.composer.attachments()
+        task = classify(text, project_mode, attachments)
+        logger.info("Request classified as %s", task.value)
         try:
             if self._current_chat_id is None or not self.store.chat_exists(self._current_chat_id):
                 self._current_chat_id = None
                 if self.new_chat() is None:
                     return False
             chat_id = self._current_chat_id
-            messages = self.service.send(chat_id, text)
+            if task is TaskType.PROJECT and not self.demo_mode:
+                self.service.add_user_message(chat_id, text)
+                payload: object = text
+                kind = JOB_PLAN
+            else:
+                payload = self.service.send(chat_id, text, self._context_for(chat_id, text, task, attachments))
+                kind = JOB_CHAT
         except AppError as exc:
             self._storage_failed(exc, card=True)
             return False
         self._refresh_sidebar()
         self.chat_view.add_user_message(text)
-        self._dispatch(chat_id, messages)
+        self._dispatch(chat_id, payload, kind)
         return True
 
     def regenerate(self) -> None:
@@ -538,12 +607,19 @@ class MainWindow(QMainWindow):
         if self.is_busy() or chat_id is None:
             return
         try:
-            messages = self.service.regenerate(chat_id)
+            text = self.service.last_user_text(chat_id) or ""
+            task = classify(text)
+            if task is TaskType.PROJECT and not self.demo_mode:
+                payload: object = text
+                kind = JOB_PLAN
+            else:
+                payload = self.service.regenerate(chat_id, self._context_for(chat_id, text, task, []))
+                kind = JOB_CHAT
         except AppError as exc:
             self.show_toast(exc.message)
             return
         self.chat_view.remove_items_after_last_user()
-        self._dispatch(chat_id, messages)
+        self._dispatch(chat_id, payload, kind)
 
     def retry(self) -> None:
         """Re-run the health check, then send the last user message if Ollama is ready."""
@@ -553,15 +629,25 @@ class MainWindow(QMainWindow):
         if self.demo_mode:
             self.regenerate()
             return
+        try:
+            text = self.service.last_user_text(chat_id) or ""
+        except AppError as exc:
+            self._storage_failed(exc)
+            return
         self.chat_view.remove_items_after_last_user()
+        self._pending_kind = JOB_PLAN if classify(text) is TaskType.PROJECT else JOB_CHAT
         self._wait_for_health(chat_id, force_check=True)
 
-    def _dispatch(self, chat_id: str, messages: list[dict]) -> None:
+    def _dispatch(self, chat_id: str, payload: object, kind: str = JOB_CHAT) -> None:
         if self.demo_mode:
             self._start_fake(chat_id)
         elif self._health.state is ConnectionState.CONNECTED:
-            self._start_ollama(chat_id, messages)
+            if kind == JOB_PLAN:
+                self._start_plan(chat_id, str(payload))
+            else:
+                self._start_ollama(chat_id, payload)  # type: ignore[arg-type]
         elif self._health.state is ConnectionState.CHECKING:
+            self._pending_kind = kind
             self._wait_for_health(chat_id, force_check=False)
         else:
             self._show_not_ready()
@@ -578,14 +664,17 @@ class MainWindow(QMainWindow):
         card.retryRequested.connect(self.retry)
         return card
 
-    def _begin_stream(self, chat_id: str, worker, status: str) -> None:
+    def _begin_stream(self, chat_id: str, worker, status: str, kind: str = JOB_CHAT) -> None:
         self._active_message = self._add_assistant_widget(status)
         self._active_chat_id = chat_id
+        self._job_kind = kind
         self._got_first_token = False
         worker.token.connect(self._on_token)
         worker.finished.connect(self._on_finished)
         worker.cancelled.connect(self._on_cancelled)
         worker.error.connect(self._on_error)
+        if hasattr(worker, "progress"):
+            worker.progress.connect(self._on_progress)
         self._handle = start_worker(worker, self)
         self.composer.set_busy(True)
 
@@ -599,9 +688,47 @@ class MainWindow(QMainWindow):
         self._begin_stream(chat_id, worker, STATUS_LOADING)
         logger.info("Model stream started (%d messages)", len(messages))
 
+    def _start_plan(self, chat_id: str, request: str) -> None:
+        worker = PlanWorker(self._client_factory(), request, self.service.system_prompt)
+        self._begin_stream(chat_id, worker, STATUS_PLANNING, JOB_PLAN)
+        logger.info("Project planning started")
+
+    def start_generation(self, chat_id: str, plan: ProjectPlan, card: PlanCard | None = None) -> bool:
+        """Apply a plan: create the project folder and generate its files in a worker."""
+        if self.is_busy() or self._health.state is not ConnectionState.CONNECTED:
+            reason = "Another answer is still running." if self.is_busy() else self._health.message
+            if card is not None:
+                card.set_state(f"Not started: {reason}")
+            self.show_toast(reason)
+            return False
+        try:
+            writer = ProjectWriter(self.config.projects_dir, plan.project_name)
+        except OSError as exc:
+            error = AppError(f"Could not create the project folder in '{self.config.projects_dir}'.", detail=str(exc))
+            self._storage_failed(error, card=True)
+            if card is not None:
+                card.set_state("Not started: the project folder could not be created.")
+            return False
+        try:
+            self._active_project = self.store.create_project(plan.project_name, str(writer.root), chat_id,
+                                                             "generating")
+        except AppError as exc:
+            self._storage_failed(exc)
+            self._active_project = None
+        self._active_plan_card = card
+        self._active_writer_root = writer.root
+        if card is not None:
+            card.set_state(f"Generating into {writer.root}")
+        worker = GenerateWorker(self._client_factory(), plan, writer, self.service.system_prompt)
+        self._active_plan = plan
+        self._begin_stream(chat_id, worker, f"Generating {len(plan.files)} files…", JOB_GENERATE)
+        logger.info("Project generation started: %d files", len(plan.files))
+        return True
+
     def stop_generation(self) -> None:
         if self._pending_chat_id is not None and self._handle is None:
             self._pending_chat_id = None
+            self._pending_kind = JOB_CHAT
             self.composer.set_busy(False)
             return
         if self._handle is None:
@@ -634,32 +761,150 @@ class MainWindow(QMainWindow):
                 self._active_message.set_status(STATUS_GENERATING)
         self._active_message.append_token(token)
 
+    def _on_progress(self, text: str) -> None:
+        if self._active_message is not None and self._from_active_worker():
+            self._active_message.set_status(text)
+
     def _on_finished(self, result: object) -> None:
         if not self._from_active_worker():
             return
+        if self._job_kind == JOB_PLAN:
+            self._plan_finished(result)
+        elif self._job_kind == JOB_GENERATE:
+            self._generation_finished(result)
+        else:
+            self._chat_finished(result)
+        self.streamFinished.emit()
+
+    def _chat_finished(self, result: object) -> None:
         data = result if isinstance(result, dict) else {}
         text = str(data.get("text", ""))
         files = list(data.get("files", []))
         status = demo.DEMO_STATUS if self.demo_mode else finished_status(self.config, data.get("stats"))
         message = self._active_message
+        chat_id = self._active_chat_id
         if message is not None:
             message.set_text(text)
             for path in files:
                 message.add_file_card(path)
             message.finish(status=status)
-        if self._active_chat_id:
+        if chat_id:
             stats = data.get("stats") if isinstance(data.get("stats"), StreamStats) else None
-            saved = self._save_reply(self._active_chat_id, text, "complete", files, stats)
+            saved = self._save_reply(chat_id, text, "complete", files, stats)
             if saved is not None and message is not None:
                 message.message_id = saved.id
         self._end_stream()
-        self.streamFinished.emit()
+        if chat_id and not self.demo_mode:
+            self._offer_changes(chat_id, text)
+
+    def _plan_finished(self, result: object) -> None:
+        chat_id = self._active_chat_id
+        message = self._active_message
+        self._end_stream()
+        if not isinstance(result, ProjectPlan) or chat_id is None:
+            return
+        text = result.to_markdown()
+        if message is not None:
+            message.set_text(text)
+            message.finish(status=STATUS_PLAN_READY)
+        saved = self._save_reply(chat_id, text, "complete")
+        if saved is not None and message is not None:
+            message.message_id = saved.id
+        card = PlanCard(result)
+        card.applyRequested.connect(lambda c=card, cid=chat_id: self.start_generation(cid, c.plan, c))
+        self.chat_view.add_card(card)
+        self.plan_cards.append(card)
+
+    def _generation_finished(self, result: object) -> None:
+        if isinstance(result, GenerationResult):
+            self._show_generation_result(result)
+        else:
+            self._end_stream()
+
+    def _show_generation_result(self, result: GenerationResult) -> None:
+        chat_id = self._active_chat_id
+        message = self._active_message
+        project = self._active_project
+        card = self._active_plan_card
+        self._end_stream()
+        text = result.summary_markdown()
+        if message is not None:
+            message.set_text(text)
+            for path in result.written:
+                message.add_file_card(path)
+            message.finish(status=f"Project {result.status}")
+        if card is not None:
+            card.set_state(f"{len(result.written)} of {len(result.plan.files)} files written ({result.status})")
+        if project is not None:
+            try:
+                self.store.update_project_status(project.id, result.status)
+            except AppError as exc:
+                self._storage_failed(exc)
+        if chat_id:
+            saved = self._save_reply(chat_id, text, "stopped" if result.cancelled else "complete",
+                                     result.written, project_id=project.id if project else None)
+            if saved is not None and message is not None:
+                message.message_id = saved.id
+        self._show_project_files(result.plan.project_name, result.root)
+        self._refresh_projects()
+        if result.written and chat_id == self._current_chat_id:
+            self.open_file(result.written[0])
+
+    def _offer_changes(self, chat_id: str, answer: str) -> None:
+        """If the answer proposes edits to the chat's project, show them as a Changes card."""
+        try:
+            project = self.store.latest_project_for_chat(chat_id)
+        except AppError:
+            return
+        if project is None or not Path(project.path).is_dir():
+            return
+        changes = parse_changes(answer)
+        if not changes:
+            return
+        pending, problems = prepare_changes(Path(project.path), changes)
+        if not pending:
+            self.show_toast("The suggested changes could not be used: " + "; ".join(problems.values())[:200])
+            return
+        card = ChangesCard(project.name, pending, problems)
+        card.applyRequested.connect(lambda c=card, p=project: self.apply_suggested_changes(c, p))
+        self.chat_view.add_card(card)
+        self.changes_cards.append(card)
+
+    def apply_suggested_changes(self, card: ChangesCard, project: ProjectRecord) -> bool:
+        root = Path(project.path)
+        try:
+            written = apply_changes(root, card.pending)
+        except (AppError, OSError) as exc:
+            message = exc.message if isinstance(exc, AppError) else str(exc)
+            logger.warning("Applying changes failed: %s", message)
+            card.set_state(f"Not applied: {message}")
+            return False
+        card.set_state(f"Applied to {len(written)} file{'s' if len(written) != 1 else ''}; originals backed up.")
+        try:
+            self.store.update_project_status(project.id, "complete")
+        except AppError as exc:
+            logger.warning("Could not update the project: %s", exc.full_text())
+        self._show_project_files(project.name, root)
+        return True
 
     def _on_cancelled(self) -> None:
         if not self._from_active_worker():
             return
+        if self._job_kind == JOB_GENERATE:
+            worker = self._handle.worker if self._handle is not None else None
+            result = getattr(worker, "result", None)
+            if not isinstance(result, GenerationResult) and self._active_plan is not None:
+                root = self._active_writer_root
+                written = list_project_files(root) if root is not None else []
+                result = GenerationResult(self._active_plan, root or Path(), written=written)
+            if isinstance(result, GenerationResult):
+                result.cancelled = True
+                self._show_generation_result(result)
+                return
         message = self._active_message
         if message is not None:
+            if self._job_kind == JOB_PLAN:
+                message.set_text(message.text() or "Planning was stopped.")
             message.finish(status=STATUS_STOPPED)
             if self._active_chat_id:
                 saved = self._save_reply(self._active_chat_id, message.text(), "stopped")
@@ -681,18 +926,74 @@ class MainWindow(QMainWindow):
             self.set_health(HealthResult(ConnectionState.MODEL_MISSING, err.message))
         elif isinstance(err, OllamaUnavailableError) and "not running" in err.message:
             self.set_health(HealthResult(ConnectionState.DISCONNECTED, err.message))
+        text = err.message
+        if self._job_kind == JOB_PLAN and isinstance(err, ResponseFormatError):
+            detail = f" ({err.detail})" if err.detail else ""
+            text = f"The model's project plan could not be used: {err.message}{detail} Try again or rephrase."
+        if self._job_kind == JOB_GENERATE:
+            if self._active_plan_card is not None:
+                self._active_plan_card.set_state("Generation failed.")
+            if self._active_project is not None:
+                try:
+                    self.store.update_project_status(self._active_project.id, "failed")
+                except AppError:
+                    logger.warning("Could not mark the project as failed")
         chat_id = self._active_chat_id
-        card = self.chat_view.add_error(err.message)
+        card = self.chat_view.add_error(text)
         card.retryRequested.connect(self.retry)
         self._end_stream()
         if chat_id:
-            self._save_reply(chat_id, err.message, "error")  # friendly text only, never a traceback
+            self._save_reply(chat_id, text, "error")  # friendly text only, never a traceback
 
     def _end_stream(self) -> None:
         self._handle = None
         self._active_message = None
         self._active_chat_id = None
+        self._active_project = None
+        self._active_plan_card = None
+        self._active_plan = None
+        self._active_writer_root = None
+        self._job_kind = JOB_CHAT
         self.composer.set_busy(False)
+
+    def _show_project_files(self, name: str, root: Path) -> None:
+        files = read_project_files(root, PREVIEW_MAX_CHARS) if root.is_dir() else {}
+        self.preview.set_project(name, files)
+
+    def _load_chat_project(self, chat_id: str) -> None:
+        """Show the chat's latest project in the preview panel (so file cards open)."""
+        if self.demo_mode:
+            return
+        try:
+            project = self.store.latest_project_for_chat(chat_id)
+        except AppError as exc:
+            logger.warning("Could not load the chat's project: %s", exc.full_text())
+            project = None
+        if project is None:
+            self.preview.clear_project()
+        else:
+            self._show_project_files(project.name, Path(project.path))
+
+    def open_project(self, project_id: str) -> None:
+        """Sidebar Projects list: show the project's files and its chat."""
+        if self.demo_mode:
+            self.open_preview()
+            return
+        try:
+            project = self.store.get_project(project_id)
+            linked = project.conversation_id if project.conversation_id and \
+                self.store.chat_exists(project.conversation_id) else None
+        except AppError as exc:
+            self._storage_failed(exc)
+            return
+        if linked and linked != self._current_chat_id:
+            self.select_chat(linked)
+        root = Path(project.path)
+        if not root.is_dir():
+            self.show_toast(f"The project folder no longer exists: {root}")
+            return
+        self._show_project_files(project.name, root)
+        self.open_preview()
 
     # --- preview ---------------------------------------------------------------
     def is_preview_open(self) -> bool:

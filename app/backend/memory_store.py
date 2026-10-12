@@ -12,6 +12,7 @@ from app.backend.chat_store import (
     Conversation,
     ProjectRecord,
     check_feedback,
+    check_project_status,
     check_message,
     clean_title,
     title_from_prompt,
@@ -28,6 +29,7 @@ class InMemoryChatStore:
         self._messages: dict[str, list[ChatMessage]] = {}
         self._order: dict[str, int] = {}
         self._settings: dict[str, str] = {}
+        self._projects: dict[str, ProjectRecord] = {}
         self._clock = itertools.count(1)
         self._ids = itertools.count(1)
 
@@ -96,6 +98,9 @@ class InMemoryChatStore:
     def delete_chat(self, chat_id: str) -> None:
         self._chat(chat_id)
         del self._chats[chat_id], self._messages[chat_id], self._order[chat_id]
+        for pid, project in list(self._projects.items()):
+            if project.conversation_id == chat_id:
+                self._projects[pid] = replace(project, conversation_id=None)
 
     def set_feedback(self, message_id: int, value: str | None) -> None:
         check_feedback(value)
@@ -107,7 +112,32 @@ class InMemoryChatStore:
         raise StorageError("That message no longer exists.", detail=f"message id {message_id}")
 
     def list_projects(self) -> list[ProjectRecord]:
-        return []
+        return sorted(self._projects.values(), key=lambda p: p.updated_at, reverse=True)
+
+    def create_project(self, name: str, path: str, conversation_id: str | None,
+                       status: str = "planned") -> ProjectRecord:
+        check_project_status(status)
+        if conversation_id is not None:
+            self._chat(conversation_id)
+        now = utc_now()
+        record = ProjectRecord(uuid.uuid4().hex, conversation_id, name, path, status, now, now)
+        self._projects[record.id] = record
+        return record
+
+    def update_project_status(self, project_id: str, status: str) -> None:
+        check_project_status(status)
+        record = self.get_project(project_id)
+        self._projects[project_id] = replace(record, status=status, updated_at=utc_now())
+
+    def get_project(self, project_id: str) -> ProjectRecord:
+        try:
+            return self._projects[project_id]
+        except KeyError:
+            raise StorageError("That project no longer exists.", detail=f"project id {project_id!r}") from None
+
+    def latest_project_for_chat(self, chat_id: str) -> ProjectRecord | None:
+        linked = [p for p in self._projects.values() if p.conversation_id == chat_id]
+        return max(linked, key=lambda p: p.created_at) if linked else None
 
     def get_setting(self, key: str, default: str | None = None) -> str | None:
         return self._settings.get(key, default)

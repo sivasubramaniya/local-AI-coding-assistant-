@@ -51,3 +51,17 @@ class CommandRejectedError(AppError):
 
 class ExportError(AppError):
     default_message = "The project could not be exported."
+
+
+class GenerationError(AppError):
+    default_message = "The project could not be generated."
+
+
+class ResponseFormatError(GenerationError):
+    """The model's answer did not follow the required format."""
+
+    default_message = "The model's answer was not in the expected format."
+
+
+class PatchError(AppError):
+    default_message = "The suggested change could not be applied."
