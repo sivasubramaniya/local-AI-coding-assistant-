@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from pathlib import PurePosixPath
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import (
     QFrame,
@@ -298,6 +298,21 @@ class AssistantMessage(QWidget):
         if status is not None:
             self.set_status(status)
         self.actions.show()
+        self._settle_layout()
+
+    def _settle_layout(self) -> None:
+        """Lay out now instead of on the next event-loop pass.
+
+        Otherwise the action row is still at the old (shorter) text height for one pass and is
+        painted over the last lines of the answer. The chat column lives in a QScrollArea, which
+        resizes it only when it handles the posted LayoutRequest events, so those are delivered
+        here synchronously (innermost first), then this message's own layout is activated.
+        """
+        widget: QWidget | None = self
+        while widget is not None:
+            QCoreApplication.sendPostedEvents(widget, QEvent.Type.LayoutRequest)
+            widget = widget.parentWidget()
+        self.layout().activate()
 
     def add_file_card(self, path: str) -> FileCard:
         card = FileCard(path, self)

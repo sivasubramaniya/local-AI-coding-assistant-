@@ -2,6 +2,9 @@ import os
 
 # GUI tests run headless. Must be set before pytest-qt creates the QApplication.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# The offscreen platform has no fonts of its own (text renders as boxes in screenshots).
+if os.name == "nt":
+    os.environ.setdefault("QT_QPA_FONTDIR", os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts"))
 
 import pytest  # noqa: E402
 

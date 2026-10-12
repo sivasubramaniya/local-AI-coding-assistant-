@@ -219,3 +219,21 @@ def test_command_approval_dialog(qtbot, themed_app):
     qtbot.addWidget(dialog2)
     dialog2.reject_button.click()
     assert dialog2.result() == QDialog.DialogCode.Rejected
+
+
+def test_action_row_is_below_the_text_as_soon_as_an_answer_finishes(themed_app):
+    """Regression (seen in a REAL app screenshot): the action row overlapped the last lines
+    of a long streamed answer until the next event-loop pass."""
+    from app.ui.chat_view import ChatView
+
+    text = "Intro\n\n```python\n" + "x = 1\n" * 30 + "```\n\n" + "\n".join(
+        f"- point {i}: " + "word " * 25 for i in range(12))
+    view = ChatView()
+    view.resize(1300, 850)
+    view.show()
+    message = view.add_assistant_message("status")
+    for start in range(0, len(text), 150):
+        message.append_token(text[start:start + 150])
+        themed_app.processEvents()
+    message.finish()  # no event processing before the check
+    assert message.actions.y() >= message.browser.y() + message.browser.height()

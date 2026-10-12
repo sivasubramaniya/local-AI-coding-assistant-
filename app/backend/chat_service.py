@@ -127,10 +127,18 @@ class ChatService:
         eval_count: int | None = None,
         tokens_per_sec: float | None = None,
         project_id: str | None = None,
+        replace: bool = False,
     ) -> ChatMessage | None:
-        """Save the assistant reply, replacing any earlier reply to the same user message."""
+        """Save an assistant message.
+
+        By default it is appended (a plan, a generation summary and test results can all follow
+        one user message). ``replace=True`` is for Regenerate/Retry: it atomically drops the
+        earlier replies to the last user message first.
+        """
         if not text or not self.store.chat_exists(chat_id):
             return None
         message = ChatMessage("assistant", text, files=list(files or []), status=status,
                               eval_count=eval_count, tokens_per_sec=tokens_per_sec, project_id=project_id)
-        return self.store.replace_reply(chat_id, message)
+        if replace:
+            return self.store.replace_reply(chat_id, message)
+        return self.store.add_message(chat_id, message)

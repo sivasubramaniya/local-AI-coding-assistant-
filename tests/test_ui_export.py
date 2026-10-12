@@ -70,6 +70,7 @@ def test_export_folder_flow(qtbot, project_win, tmp_path, tmp_config):
     assert (destination / "calc.py").is_file() and not (destination / ".env").exists()
     assert (destination / "README.md").is_file()  # generated with instructions
     card = _cards(win, ExportCard)[-1]
+    assert not win.toast.isVisible()  # the progress toast is gone once the card appears
     assert str(destination) in card.path_label.text()
     card.open_button.click()
     assert opened == [str(destination)]

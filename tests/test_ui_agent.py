@@ -244,3 +244,31 @@ def test_model_text_is_never_executed(qtbot, session, fake, tmp_config, monkeypa
         win.submit_prompt("debug hello.py please")
     assert calls == []
     assert _cards(win, ChangesCard) == []  # a command block without path= is not a file change
+
+
+
+def test_running_tests_after_generation_keeps_plan_summary_and_file_cards(qtbot, session, fake, tmp_config):
+    """Regression (found by the REAL app test): saving test results used to replace the
+    generation summary (and its file cards) because every reply replaced earlier replies."""
+    win = session()
+    card = _plan(qtbot, win, fake)
+    fake.replies = [HELLO, README]
+    with qtbot.waitSignal(win.streamFinished, timeout=10000):
+        card.apply_button.click()
+    root = tmp_config.projects_dir / "hello-tool"
+    (root / "test_hello.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
+    win.approver = lambda command, cwd: True
+    with qtbot.waitSignal(win.streamFinished, timeout=60000):
+        assert win.run_project_tests()
+    chat_id = win.current_chat_id()
+    contents = [m.content for m in win.store.get_messages(chat_id)]
+    assert len(contents) == 4  # request, plan, generation summary, test results
+    assert "Project plan" in contents[1] and "files written" in contents[2] and "Exit code 0" in contents[3]
+    win.close()
+    win.store.close()
+
+    win2 = session()
+    assert win2.current_chat_id() == chat_id
+    assistants = [w for w in win2.chat_view.items if isinstance(w, AssistantMessage)]
+    assert len(assistants) == 3
+    assert [c.path for c in assistants[1].file_cards] == ["hello.py", "README.md"]

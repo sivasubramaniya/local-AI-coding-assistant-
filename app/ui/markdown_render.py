@@ -47,7 +47,7 @@ def split_fenced(text: str) -> list[str | CodeBlock]:
             if prose:
                 parts.append("\n".join(prose))
                 prose = []
-            info = stripped[3:].strip()
+            info = stripped.lstrip("`").strip()  # ``` or longer fences (````text)
             language = info.split()[0] if info else ""
             code = []
             in_code = True

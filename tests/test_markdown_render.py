@@ -34,3 +34,40 @@ def test_render_features():
 def test_unknown_language_falls_back_to_plain_text():
     rendered = render_markdown("```nosuchlang\nabc\n```")
     assert "abc" in rendered.html
+
+
+
+def test_longer_fences_keep_a_clean_language_label():
+    """Regression (REAL app screenshot): command output in ````text fences showed '`text'."""
+    from app.ui.markdown_render import render_markdown, split_fenced
+
+    parts = split_fenced("Output:\n````text\n6 passed\n````\nDone")
+    block = [p for p in parts if not isinstance(p, str)][0]
+    assert block.language == "text" and block.code == "6 passed"
+    assert "`text" not in render_markdown("````text\nok\n````").html
+
+
+def test_plan_markdown_renders_files_as_a_list():
+    """Regression (REAL app screenshot): the plan's file list rendered as one paragraph."""
+    from app.agent.project_generator import PlannedFile, ProjectPlan
+    from app.ui.markdown_render import render_markdown
+
+    plan = ProjectPlan("todo", "A to-do app.", "Python", (PlannedFile("todo.py", "main"),
+                                                         PlannedFile("test_todo.py", "tests")),
+                       "python todo.py", "python -m pytest")
+    html = render_markdown(plan.to_markdown()).html
+    assert html.count("<li") == 2
+    assert "Run: python todo.py" in html and "Test:" in html
+
+
+
+def test_generation_summary_keeps_separate_paragraphs(tmp_path):
+    """Regression (REAL app screenshot): 'Folder:' and 'Run/Test' merged into the title line."""
+    from app.agent.project_generator import GenerationResult, PlannedFile, ProjectPlan
+    from app.ui.markdown_render import render_markdown
+
+    plan = ProjectPlan("todo", "d", "Python", (PlannedFile("a.py", "x"), PlannedFile("b.py", "y")),
+                       "python a.py", "python -m pytest")
+    result = GenerationResult(plan, tmp_path, written=["a.py"], failed={"b.py": "no block"})
+    html = render_markdown(result.summary_markdown()).html
+    assert html.count("<p") >= 6 and html.count("<li") == 1

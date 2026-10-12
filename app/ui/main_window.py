@@ -190,6 +190,8 @@ class MainWindow(QMainWindow):
         self.plan_cards: list[PlanCard] = []
         self.command_results: list[CommandResult] = []
         self._repair: dict[str, RepairLoop] = {}
+        # Set by Regenerate/Retry: the next saved reply in that chat replaces the earlier one(s).
+        self._replace_reply_chat: str | None = None
         self._active_commands: list[list[str]] = []
         # Asks the user to approve a command (command text, working dir) -> bool. Tests replace it.
         self.approver: Callable[[str, str], bool] = self._ask_approval
@@ -526,12 +528,15 @@ class MainWindow(QMainWindow):
     def _save_reply(self, chat_id: str, text: str, status: str, files: list[str] | None = None,
                     stats: StreamStats | None = None, project_id: str | None = None) -> ChatMessage | None:
         has_stats = stats is not None and stats.eval_count > 0
+        replace = self._replace_reply_chat == chat_id
+        self._replace_reply_chat = None
         try:
             return self.service.record_reply(
                 chat_id, text, status, files,
                 eval_count=stats.eval_count if has_stats else None,
                 tokens_per_sec=round(stats.tokens_per_second, 2) if has_stats else None,
                 project_id=project_id,
+                replace=replace,
             )
         except AppError as exc:
             self._storage_failed(exc, card=chat_id == self._current_chat_id)
@@ -626,6 +631,7 @@ class MainWindow(QMainWindow):
         if not text or self.is_busy():
             return False
         attachments = self.composer.attachments()
+        self._replace_reply_chat = None  # a new question never replaces earlier answers
         task = classify(text, project_mode, attachments)
         logger.info("Request classified as %s", task.value)
         try:
@@ -667,6 +673,7 @@ class MainWindow(QMainWindow):
             self.show_toast(exc.message)
             return
         self.chat_view.remove_items_after_last_user()
+        self._replace_reply_chat = chat_id
         self._dispatch(chat_id, payload, kind)
 
     def retry(self) -> None:
@@ -683,6 +690,7 @@ class MainWindow(QMainWindow):
             self._storage_failed(exc)
             return
         self.chat_view.remove_items_after_last_user()
+        self._replace_reply_chat = chat_id
         self._pending_kind = JOB_PLAN if classify(text) is TaskType.PROJECT else JOB_CHAT
         self._wait_for_health(chat_id, force_check=True)
 
@@ -1284,6 +1292,7 @@ class MainWindow(QMainWindow):
 
     def _on_exported(self, result: object) -> None:
         self._export_handle = None
+        self.toast.hide()  # the "Exporting…" notice is finished; the card says the rest
         card = ExportCard(result, self._export_as_zip)
         card.openRequested.connect(self._open_export_folder)
         self.chat_view.add_card(card)
@@ -1313,7 +1322,7 @@ class MainWindow(QMainWindow):
                 logger.warning("Ignoring a bad saved command timeout: %r", raw)
 
     def _edit_settings(self, export_dir: str, timeout_s: float) -> tuple[str, int] | None:
-        dialog = SettingsDialog(export_dir, timeout_s, self)
+        dialog = SettingsDialog(export_dir, timeout_s, self, model_name=self.config.model_name)
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
             return dialog.values()
         return None

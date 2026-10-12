@@ -47,13 +47,14 @@ class ProjectPlan:
     request: str = ""  # the user's original request (repeated in every file call)
 
     def to_markdown(self) -> str:
+        # blank lines matter: Markdown only starts a list or a new paragraph after one
         lines = [f"**Project plan: {self.project_name}**", "", self.description, "",
-                 f"Language: {self.language}", "", "Files:"]
+                 f"Language: {self.language}", "", "Files:", ""]
         lines += [f"{i}. `{f.path}` — {f.purpose}" for i, f in enumerate(self.files, 1)]
         if self.run_instructions:
             lines += ["", f"Run: {self.run_instructions}"]
         if self.test_command:
-            lines += [f"Test: `{self.test_command}`"]
+            lines += ["", f"Test: `{self.test_command}`"]
         return "\n".join(lines)
 
 
@@ -74,19 +75,20 @@ class GenerationResult:
         return "partial" if self.failed else "complete"
 
     def summary_markdown(self) -> str:
-        lines = [f"**{self.plan.project_name}** — {len(self.written)} of {len(self.plan.files)} files written",
-                 f"Folder: `{self.root}`"]
+        # one Markdown paragraph per entry (single newlines would merge them into one line)
+        paragraphs = [f"**{self.plan.project_name}** — {len(self.written)} of {len(self.plan.files)} files written",
+                      f"Folder: `{self.root}`"]
         if self.cancelled:
-            lines.append("Generation was stopped. Files written so far were kept.")
+            paragraphs.append("Generation was stopped. Files written so far were kept.")
         if self.failed:
-            lines += ["", "Files that could not be generated:"]
-            lines += [f"- `{path}`: {reason}" for path, reason in self.failed.items()]
+            paragraphs.append("Files that could not be generated:\n\n" + "\n".join(
+                f"- `{path}`: {reason}" for path, reason in self.failed.items()))
         if self.plan.run_instructions:
-            lines += ["", f"Run: {self.plan.run_instructions}"]
+            paragraphs.append(f"Run: {self.plan.run_instructions}")
         if self.plan.test_command:
-            lines += [f"Test: `{self.plan.test_command}`"]
-        lines += ["", "Review the code before running it. Nothing was executed."]
-        return "\n".join(lines)
+            paragraphs.append(f"Test: `{self.plan.test_command}`")
+        paragraphs.append("Review the code before running it. Nothing was executed.")
+        return "\n\n".join(paragraphs)
 
 
 # --- prompts -----------------------------------------------------------------------

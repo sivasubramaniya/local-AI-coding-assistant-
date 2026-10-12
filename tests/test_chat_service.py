@@ -111,7 +111,7 @@ def test_regenerate_replaces_reply_and_keeps_system_first(service):
     assert [m["content"] for m in messages[1:]] == ["first", "answer one", "second"]
     # the old reply stays until the new one is recorded, which replaces it
     assert len(service.store.get_messages(chat.id)) == 4
-    service.record_reply(chat.id, "answer two, again")
+    service.record_reply(chat.id, "answer two, again", replace=True)
     stored = service.store.get_messages(chat.id)
     assert [(m.role, m.content) for m in stored] == [
         ("user", "first"), ("assistant", "answer one"), ("user", "second"), ("assistant", "answer two, again"),
@@ -164,3 +164,16 @@ def test_invalid_status_is_rejected(service):
     service.send(chat.id, "q")
     with pytest.raises(StorageError):
         service.record_reply(chat.id, "a", status="done")
+
+
+
+def test_replies_append_by_default_so_nothing_is_lost(service):
+    """Regression (REAL app test, Phase 12): plan, summary and test results all follow one request."""
+    chat = service.store.create_chat()
+    service.send(chat.id, "make a todo app")
+    service.record_reply(chat.id, "plan")
+    service.record_reply(chat.id, "summary", files=["todo.py"], project_id=None)
+    service.record_reply(chat.id, "Exit code 0")
+    assert [m.content for m in service.store.get_messages(chat.id)] == [
+        "make a todo app", "plan", "summary", "Exit code 0"]
+    assert service.store.get_messages(chat.id)[2].files == ["todo.py"]
