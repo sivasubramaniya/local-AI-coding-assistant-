@@ -132,15 +132,14 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 9 — Project Export  `[ ]`
+## Phase 9 — Project Export  `[x]`
 
-- [ ] Export to a user-selected folder (Desktop by default)
-- [ ] Include source, tests, config and README; exclude caches, secrets and `__pycache__`
-- [ ] Create a ZIP archive
-- [ ] Verify archive contents after creation
-- [ ] Build and run instructions in the README
-
-**Deliverable:** complete project folders and ZIP archives.
+- [x] Export to a user-selected folder (default from settings, initially the Desktop); `-2`, `-3` on name collisions
+- [x] Include source, tests, config and README; exclude caches, venvs, build output, backups, `.git` (optional), secrets
+- [x] Create a ZIP archive (ZIP_DEFLATED)
+- [x] Verify archive contents after creation (testzip, names, sizes, extraction) before reporting success
+- [x] Build/run/test instructions in the exported README (added to the copy when missing)
+- [x] Export / Export ZIP buttons, success card with Open folder, Settings dialog (export folder, command timeout, theme placeholder)
 
 ---
 
@@ -201,3 +200,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-12 | 6 | Coding agent: task classifier, two-step project generator (plan JSON + per-file blocks, retry), plan/changes cards, edit flow with diffs and backups, project context for debug/refactor, path validator, DB migration v2 (message_files) | 333 passed (MOCK); real generator test: see Phase 7 row |
 | 2026-10-12 | 7 | Security: path validator hardening + attack suite, project validator, allowlisted tool runner (shell=False, timeouts, tree kill), approval flow + Run project tests; config `command_timeout_s`. Phase 6 real generator integration test passed (4.1 min) | 536 passed, 1 skipped (symlink privilege) (MOCK); 1 integration passed (REAL) |
 | 2026-10-12 | 8 | Debug workflow: Java/Python test detection, command sequences, JDK discovery, repair loop (max 3 rounds, diff + confirm + re-run), pytest-cov; generator fixes found by REAL runs (request + earlier files in file prompts, lenient Markdown, path-before-block edits). REAL: Java sample generated and passed (run 2), REAL repair fixed an injected bug in 1 round; run 1 (before fixes) failed and is kept as evidence | 601 passed, 1 skipped (MOCK); coverage 88%; REAL: Java sample PASS, repair demo PASS |
+| 2026-10-12 | 9 | Project export: folder export with exclusions and -N collisions, README instructions, verified ZIP (testzip, names, sizes, extraction), Export/ZIP buttons with success card, Settings dialog (export folder, command timeout) | 601 passed, 1 skipped (MOCK) |
