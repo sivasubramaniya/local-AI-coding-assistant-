@@ -88,6 +88,8 @@ Invoke-RestMethod http://localhost:11434/api/tags
 13. **Report blockers honestly.**
 14. **Update `PLAN.md`** (checklist and changelog) at the end of each phase.
 
+Autonomous mode approved by owner on 2026-10-12 for Phases 5–11: plan, implement, test, commit and continue without waiting for approval.
+
 ## Security Requirements (enforced in code, not only by the prompt)
 
 - The system prompt guides model behavior but is **not** a security boundary.
