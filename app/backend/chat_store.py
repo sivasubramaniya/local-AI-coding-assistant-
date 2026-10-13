@@ -23,6 +23,7 @@ AUTO_TITLE_MAX = 40
 TITLE_MAX = 80
 ROLES = ("user", "assistant")
 STATUSES = ("complete", "stopped", "error")
+KINDS = ("chat", "tool")  # tool = output of an approved command (tests); restored as a checks result
 FEEDBACK_BAD = "bad"
 FEEDBACK_VALUES = (None, FEEDBACK_BAD)
 LAST_CHAT_SETTING = "last_chat_id"
@@ -43,6 +44,7 @@ class ChatMessage:
     created_at: str | None = None
     project_id: str | None = None  # the project the file cards belong to
     model_name: str | None = None  # the model that wrote an assistant message
+    kind: str = "chat"
 
 
 @dataclass
@@ -95,6 +97,8 @@ def check_message(message: ChatMessage) -> None:
         raise StorageError("Could not save the message.", detail=f"invalid role {message.role!r}")
     if message.status not in STATUSES:
         raise StorageError("Could not save the message.", detail=f"invalid status {message.status!r}")
+    if message.kind not in KINDS:
+        raise StorageError("Could not save the message.", detail=f"invalid kind {message.kind!r}")
     if not isinstance(message.content, str):
         raise StorageError("Could not save the message.", detail="content must be text")
 

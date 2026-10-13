@@ -104,3 +104,26 @@ def test_no_project_means_no_command(win):
     win.approver = lambda command, cwd: pytest.fail("must not ask")
     assert win.run_project_tests() is False
     assert win.toast.isVisible()
+
+
+
+def test_restored_tool_runs_show_checks_status_not_the_model(qtbot, win, project, tmp_config, tmp_path):
+    """Regression: after a restart, test-run messages showed the model name, and failed runs were
+    restored as red error cards with raw Markdown."""
+    win.approver = lambda command, cwd: True
+    with qtbot.waitSignal(win.streamFinished, timeout=60000):
+        win.run_project_tests()  # passes
+    (project / "test_calc.py").write_text("def test_bad():\n    assert 1 == 2\n", encoding="utf-8")
+    win._repair.clear()
+    with qtbot.waitSignal(win.streamFinished, timeout=60000):
+        win.run_project_command(["python", "-m", "pytest", "-q"])  # fails, no repair loop
+    chat_id = win.current_chat_id()
+    kinds = [(m.kind, m.status) for m in win.store.get_messages(chat_id) if m.role == "assistant"]
+    assert kinds == [("tool", "complete"), ("tool", "error")]
+
+    win.chat_view.clear()
+    win._current_chat_id = None
+    win.select_chat(chat_id)  # restore from the database
+    restored = [w for w in win.chat_view.items if isinstance(w, AssistantMessage)]
+    assert [w.status_label.text() for w in restored] == ["Checks passed", "Checks failed"]
+    assert not [w for w in win.chat_view.items if isinstance(w, ErrorCard)]

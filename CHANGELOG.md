@@ -2,6 +2,20 @@
 
 All notable changes to Local AI Assistant. Summarised from the `PLAN.md` changelog; dates are 2026.
 
+## [1.1.1] — 2026-10-13
+
+Pre-publish cleanup.
+
+### Fixed
+- Restored test/command runs showed the model name, and failed runs came back as red error cards with
+  raw Markdown. Messages now record their kind (database schema v4: `messages.kind`, existing tool-run
+  rows are backfilled) and restore as "Checks passed" / "Checks failed".
+
+### Changed
+- Screenshots 06–09 retaken in a neutral folder (`D:\laa-demo`), so no Windows user name is visible.
+- Personal paths removed from sample reports and from the git history; old screenshots that showed them were
+  stripped from history. A test now fails if a tracked text file contains a `C:\Users\<name>` path.
+
 ## [1.1.0] — 2026-10-12
 
 ### Added

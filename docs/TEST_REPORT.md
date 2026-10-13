@@ -1,4 +1,4 @@
-# Final Test Report — Local AI Assistant 1.1.0
+# Final Test Report — Local AI Assistant 1.1.1
 
 Date: 2026-10-12 · Windows 11 Home 10.0.26300 · Python 3.12.10 · Ollama 0.40.2 ·
 model `qwen2.5-coder-14b:latest` (from `qwen2.5-coder:14b`, runs about 79% CPU / 21% GPU, ~3 tok/s) ·
@@ -22,6 +22,18 @@ server). **REAL** = the real local model and/or real compilers and processes.
 
 The one skip: `tests/test_validation.py::test_symlink_escape_is_rejected` — creating a symlink needs
 Developer Mode or admin rights on this machine. The junction-escape test (no privilege needed) ran and passed.
+
+## Release 1.1.1 (Phase 14 — pre-publish cleanup, 2026-10-13)
+
+- New test `tests/test_no_personal_paths.py` fails if a tracked text file contains `C:\Users\<name>`.
+- Screenshots 06–09 retaken with `--basetemp D:\laa-demo\run` (REAL app test: 5/5 passed); all nine
+  checked by eye for user names.
+- Regression test: restored tool runs show "Checks passed"/"Checks failed" (schema v4 `messages.kind`).
+- History rewritten with `git filter-repo` after a full backup; verification in the Phase 14 report.
+- Known issue, re-measured: the pytest process can crash with 0xC0000409 during Qt teardown *after* all
+  tests passed — 5 of 10 full runs on 2026-10-13 (normal mode, not only `--offline-guard`). Test results
+  are unaffected; it has not been seen in the app or the packaged exe. Flushing Qt deletes at session end
+  did not help and was reverted (third fix attempt).
 
 ## Release 1.1.0 verification (Phase 13 — Fast mode, 2026-10-12/13)
 

@@ -70,7 +70,7 @@ def test_check_reports_database_without_creating_it(tmp_path):
     result = _run(tmp_path, "--check", LAA_OLLAMA_URL=UNUSED_LOCAL_URL)
     assert result.returncode == 0, result.stderr
     assert "assistant.db" in result.stdout
-    assert "DB schema     : not created yet (app supports v3)" in result.stdout
+    assert "DB schema     : not created yet (app supports v4)" in result.stdout
     assert not (tmp_path / "data" / "assistant.db").exists()
 
 
@@ -81,7 +81,7 @@ def test_check_reports_schema_and_chat_count(tmp_path):
     repo.create_chat()
     repo.close()
     result = _run(tmp_path, "--check", LAA_OLLAMA_URL=UNUSED_LOCAL_URL)
-    assert "DB schema     : v3 (app supports v3)" in result.stdout
+    assert "DB schema     : v4 (app supports v4)" in result.stdout
     assert "Chats         : 1" in result.stdout
 
 
@@ -141,5 +141,5 @@ def test_check_reports_both_models_and_optional_fast(tmp_path):
     assert "Model         : qwen2.5-coder-14b:latest (default, Quality)" in result.stdout
     assert "Fast model    : qwen2.5-coder-7b:latest (optional" in result.stdout
     assert "Fast present  : no" in result.stdout
-    assert "ollama create qwen2.5-coder-7b -f .\ollama\Modelfile.fast" in result.stdout
+    assert r"ollama create qwen2.5-coder-7b -f .\ollama\Modelfile.fast" in result.stdout
     assert "WARNING" not in result.stdout  # the fast model is optional

@@ -57,7 +57,7 @@ def test_schema_created_at_latest_with_pragmas(db_path):
         assert isinstance(conn.execute("SELECT 1").fetchone(), sqlite3.Row)
     finally:
         conn.close()
-    assert latest_version() == 3
+    assert latest_version() == 4
 
 
 def test_reopen_does_not_reapply(db_path):
@@ -333,7 +333,7 @@ def test_inspect_database_is_read_only(db_path):
 
 
 def test_repository_schema_version(repo):
-    assert repo.schema_version() == latest_version() == 3
+    assert repo.schema_version() == latest_version() == 4
 
 
 def test_real_v1_database_upgrades_to_latest_and_keeps_data(db_path):
@@ -395,7 +395,7 @@ def test_v2_database_upgrades_to_v3_and_keeps_data(db_path):
     v2.close()
     repo = SqliteChatRepository.open(db_path)
     try:
-        assert repo.schema_version() == 3
+        assert repo.schema_version() == latest_version()
         old = repo.get_messages(chat.id)[0]
         assert old.content == "old answer" and old.model_name is None  # unknown for old rows
         assert repo.get_chat(chat.id).model_name == "qwen2.5-coder-14b:latest"
@@ -414,3 +414,32 @@ def test_message_and_chat_model_round_trip(repo):
         repo.set_chat_model(chat.id, " ")
     with pytest.raises(StorageError):
         repo.set_chat_model("missing", "qwen2.5-coder-7b:latest")
+
+
+
+# --- v4: message kind (Phase 14) ------------------------------------------------------------
+TOOL_TEXT = "`python -m pytest -q` in `D:\\laa-demo\\p`\n\nExit code 1 · 0.5 s\n\nErrors:\n````text\nboom\n````"
+
+
+def test_v3_database_upgrades_to_v4_and_backfills_tool_messages(db_path):
+    v3 = SqliteChatRepository(open_database(db_path, MIGRATIONS[:3]))
+    chat = v3.create_chat()
+    for seq, content in ((1, TOOL_TEXT), (2, "A normal answer with `code` in it.")):
+        v3._conn.execute(
+            "INSERT INTO messages (conversation_id, seq, role, content, status, created_at)"
+            " VALUES (?, ?, 'assistant', ?, 'error', '2026-01-01')", (chat.id, seq, content))
+    v3.close()
+    repo = SqliteChatRepository.open(db_path)
+    try:
+        kinds = [m.kind for m in repo.get_messages(chat.id)]
+        assert repo.schema_version() == 4 and kinds == ["tool", "chat"]
+    finally:
+        repo.close()
+
+
+def test_message_kind_round_trip_and_validation(repo):
+    chat = repo.create_chat()
+    repo.add_message(chat.id, ChatMessage("assistant", "out", kind="tool"))
+    assert repo.get_messages(chat.id)[0].kind == "tool"
+    with pytest.raises(StorageError):
+        repo.add_message(chat.id, ChatMessage("assistant", "x", kind="weird"))

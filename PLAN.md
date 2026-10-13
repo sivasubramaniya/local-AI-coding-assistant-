@@ -194,6 +194,17 @@ stop at every phase boundary and wait for approval.
 
 ---
 
+## Phase 14 — Pre-publish Cleanup  `[x]`
+
+- [x] Found every tracked file and commit containing the Windows user name, `C:\Users\` or "OneDrive" (text and images)
+- [x] Current files clean; screenshots 06–09 retaken under `D:\laa-demo` (REAL app test 5/5)
+- [x] `tests/test_no_personal_paths.py` fails on any `C:\Users\<name>` path in tracked text files
+- [x] Backup at `D:\coder slm-backup`; history rewritten with git filter-repo (paths replaced, old screenshots stripped); tags re-created
+- [x] Restored tool runs show "Checks passed"/"Checks failed" (schema v4 `messages.kind`, backfilled) + regression test
+- [x] Version 1.1.1; pytest, exe rebuild and `--check` verified
+
+---
+
 ## Final Deliverables Checklist
 
 - [x] Native Windows desktop app (PySide6)
@@ -233,3 +244,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-12 | 11 | Windows packaging: PyInstaller spec (onedir, windowed), bundled prompt/icons/Modelfile/docs, --check console attach + logs\check.txt, bundled-Modelfile hint, worker shutdown at exit, INSTALL.md, TEST_REPORT.md, README | 601 passed, 1 skipped (MOCK); 4 integration passed (REAL); packaged exe --check and window launch OK (REAL) |
 | 2026-10-12 | 12 | Polish and release 1.0.0: performance trials (nothing kept), REAL end-to-end app test + 6 fixes, build 567 → 322 MB, gitignore/secret scan, version 1.0.0, README/CHANGELOG/LICENSE | 611 passed, 1 skipped (MOCK); 9 integration passed (REAL); exe --check OK |
 | 2026-10-13 | 13 | Fast mode: optional user-selected `qwen2.5-coder-7b:latest` per chat (no fallback), DB v3, both-model health and --check, plan-card note, parser fix found by the REAL 7B run; v1.1.0 | 628 passed, 1 skipped (MOCK); 11 integration passed incl. 1 re-run after a sleep-related Ollama timeout (REAL); 7B 6.40 vs 14B 3.19 tok/s |
+| 2026-10-13 | 14 | Pre-publish cleanup: personal paths removed from files and history (filter-repo, backup kept), neutral screenshots, personal-path test, tool-run restore fix (DB v4), v1.1.1 | 633 passed, 1 skipped (MOCK); REAL app test 5/5; exe --check OK |

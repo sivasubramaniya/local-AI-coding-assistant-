@@ -5,7 +5,7 @@ answer comes from a model on your own computer through [Ollama](https://ollama.c
 `qwen2.5-coder-14b:latest` by default, or the optional `qwen2.5-coder-7b:latest` when you pick
 **Fast mode** for a chat. No cloud APIs, no telemetry, no silent model switching.
 
-Version **1.1.0** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
+Version **1.1.1** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
 
 ![Chat with a highlighted code answer](docs/screenshots/03-answer.png)
 
@@ -140,7 +140,7 @@ Details: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 - Slow on CPU-heavy machines (see above); close heavy apps while generating.
 - The Wi-Fi-off manual checklist in [docs/OFFLINE.md](docs/OFFLINE.md) has to be run by you.
 - The packaged app is not code-signed (SmartScreen warning) and is ~322 MB because of QtWebEngine.
-- `pytest --offline-guard` can occasionally crash at process exit after all tests passed (Qt shutdown).
+- The pytest process can occasionally crash during Qt shutdown *after* all tests passed (results unaffected; not seen in the app).
 - Python projects run from the packaged app use the `python` on your PATH.
 - Light theme is a placeholder.
 

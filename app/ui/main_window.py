@@ -111,6 +111,8 @@ STATUS_PLANNING = "Planning project…"
 STATUS_PLAN_READY = "Project plan · review it, then click Generate files"
 JOB_CHAT, JOB_PLAN, JOB_GENERATE, JOB_TOOL = "chat", "plan", "generate", "tool"
 STATUS_RUNNING = "Running command…"
+STATUS_CHECKS_PASSED = "Checks passed"
+STATUS_CHECKS_FAILED = "Checks failed"
 MAX_REPAIR_ROUNDS = 3
 
 
@@ -448,11 +450,14 @@ class MainWindow(QMainWindow):
         if message.role == "user":
             self.chat_view.add_user_message(message.content)
             return
-        if message.status == "error":
+        if message.kind == "tool":
+            status = {"complete": STATUS_CHECKS_PASSED, "error": STATUS_CHECKS_FAILED}.get(message.status,
+                                                                                         STATUS_STOPPED)
+        elif message.status == "error":
             card = self.chat_view.add_error(message.content)
             card.retryRequested.connect(self.retry)
             return
-        if message.status == "stopped":
+        elif message.status == "stopped":
             status = STATUS_STOPPED
         elif self.demo_mode:
             status = demo.DEMO_STATUS
@@ -541,7 +546,7 @@ class MainWindow(QMainWindow):
 
     def _save_reply(self, chat_id: str, text: str, status: str, files: list[str] | None = None,
                     stats: StreamStats | None = None, project_id: str | None = None,
-                    model_name: str | None = None) -> ChatMessage | None:
+                    model_name: str | None = None, kind: str = "chat") -> ChatMessage | None:
         has_stats = stats is not None and stats.eval_count > 0
         replace = self._replace_reply_chat == chat_id
         self._replace_reply_chat = None
@@ -553,6 +558,7 @@ class MainWindow(QMainWindow):
                 project_id=project_id,
                 replace=replace,
                 model_name=model_name,
+                kind=kind,
             )
         except AppError as exc:
             self._storage_failed(exc, card=chat_id == self._current_chat_id)
@@ -1087,9 +1093,9 @@ class MainWindow(QMainWindow):
                 text += f"\n\n**Repair round {next_round} of {MAX_REPAIR_ROUNDS}:** asking the model for a fix…"
         if message is not None:
             message.set_text(text)
-            message.finish(status="Checks passed" if ok else "Checks failed")
+            message.finish(status=STATUS_CHECKS_PASSED if ok else STATUS_CHECKS_FAILED)
         if chat_id:
-            saved = self._save_reply(chat_id, text, "complete" if ok else "error")
+            saved = self._save_reply(chat_id, text, "complete" if ok else "error", kind="tool")
             if saved is not None and message is not None:
                 message.message_id = saved.id
         if next_round and chat_id:
@@ -1184,7 +1190,8 @@ class MainWindow(QMainWindow):
                 message.set_text("The command was stopped. Its process tree was ended.")
             message.finish(status=STATUS_STOPPED)
             if self._active_chat_id:
-                saved = self._save_reply(self._active_chat_id, message.text(), "stopped")
+                saved = self._save_reply(self._active_chat_id, message.text(), "stopped",
+                                         kind="tool" if self._job_kind == JOB_TOOL else "chat")
                 if saved is not None:
                     message.message_id = saved.id
         self._end_stream()
