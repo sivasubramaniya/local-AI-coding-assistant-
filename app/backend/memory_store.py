@@ -95,6 +95,11 @@ class InMemoryChatStore:
         chat.title = clean_title(title)
         return replace(chat)
 
+    def set_chat_model(self, chat_id: str, model_name: str) -> None:
+        if not model_name or not model_name.strip():
+            raise StorageError("Could not save the model choice.", detail="empty model name")
+        self._chat(chat_id).model_name = model_name
+
     def delete_chat(self, chat_id: str) -> None:
         self._chat(chat_id)
         del self._chats[chat_id], self._messages[chat_id], self._order[chat_id]

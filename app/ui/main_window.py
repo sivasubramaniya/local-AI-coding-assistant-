@@ -58,7 +58,7 @@ from app.backend.chat_store import (
     ProjectRecord,
 )
 from app.backend.memory_store import InMemoryChatStore
-from app.backend.ollama_client import OllamaClient, StreamStats
+from app.backend.ollama_client import OllamaClient, StreamStats, create_hint
 from app.backend.status import ConnectionState, HealthResult, stub_connection_state
 from app.config import AppConfig
 from app.backend.task_classifier import TaskType, classify
@@ -97,6 +97,7 @@ logger = logging.getLogger(__name__)
 NO_PROJECT_TO_EXPORT = "This chat has no project to export yet."
 EXPORT_DIR_SETTING = "export_dir"
 COMMAND_TIMEOUT_SETTING = "command_timeout_s"
+DEFAULT_MODEL_MODE_SETTING = "default_model_mode"  # "quality" (14B, default) or "fast" (7B)
 TOAST_MS = 2600
 PREVIEW_SHARE = 0.45
 STATUS_LOADING = "Loading model…"
@@ -143,10 +144,10 @@ def reply_status(model_name: str, eval_count: int | None, tokens_per_sec: float 
     return f"{name} · {eval_count} tokens · {tokens_per_sec or 0.0:.1f} tok/s"
 
 
-def finished_status(config: AppConfig, stats: StreamStats | None) -> str:
+def finished_status(model_name: str, stats: StreamStats | None) -> str:
     if stats is None:
-        return reply_status(config.model_name, None, None)
-    return reply_status(config.model_name, stats.eval_count, stats.tokens_per_second)
+        return reply_status(model_name, None, None)
+    return reply_status(model_name, stats.eval_count, stats.tokens_per_second)
 
 
 class MainWindow(QMainWindow):
@@ -192,6 +193,13 @@ class MainWindow(QMainWindow):
         self._repair: dict[str, RepairLoop] = {}
         # Set by Regenerate/Retry: the next saved reply in that chat replaces the earlier one(s).
         self._replace_reply_chat: str | None = None
+        # Model selection is explicit and per chat. Nothing here ever picks a model by itself.
+        self._fast_default = False
+        self._selected_model = config.model_name
+        self._active_model = config.model_name
+        self._model_presence: dict[str, bool] | None = None
+        self._ollama_version: str | None = None
+        self._health_checked_model = config.model_name
         self._active_commands: list[list[str]] = []
         # Asks the user to approve a command (command text, working dir) -> bool. Tests replace it.
         self.approver: Callable[[str, str], bool] = self._ask_approval
@@ -315,6 +323,7 @@ class MainWindow(QMainWindow):
 
         self.composer.sendRequested.connect(self.submit_prompt)
         self.composer.stopRequested.connect(self.stop_generation)
+        self.composer.fastModeToggled.connect(self.set_fast_mode)
 
         self.export_button.clicked.connect(lambda: self.export_project(as_zip=False))
         self.files_button.clicked.connect(self.toggle_preview)
@@ -396,12 +405,16 @@ class MainWindow(QMainWindow):
             chat_id = current  # already on an untouched chat: reuse it
         else:
             try:
-                chat_id = self.store.create_chat(model_name=self.config.model_name).id
+                chat_id = self.store.create_chat(model_name=self.default_model()).id
             except AppError as exc:
                 self._storage_failed(exc)
                 return None
         self._set_current(chat_id)
         self.chat_view.clear()
+        try:
+            self._apply_model(self._model_for_chat(self.store.get_chat(chat_id)))
+        except AppError:
+            self._apply_model(self.default_model())
         if not self.demo_mode:
             self.preview.clear_project()
         self._refresh_sidebar()
@@ -424,6 +437,7 @@ class MainWindow(QMainWindow):
         if previous != chat_id:
             self._discard_if_empty(previous)
         self.chat_view.clear()
+        self._apply_model(self._model_for_chat(chat))
         for message in messages:
             self._render_stored(chat, message)
         self._load_chat_project(chat_id)
@@ -443,8 +457,8 @@ class MainWindow(QMainWindow):
         elif self.demo_mode:
             status = demo.DEMO_STATUS
         else:
-            status = reply_status(chat.model_name or self.config.model_name, message.eval_count,
-                                  message.tokens_per_sec)
+            status = reply_status(message.model_name or chat.model_name or self.config.model_name,
+                                  message.eval_count, message.tokens_per_sec)
         widget = self._add_assistant_widget(status)
         widget.set_text(message.content)
         for path in message.files:
@@ -526,7 +540,8 @@ class MainWindow(QMainWindow):
             widget.actions.set_thumbs_down(not checked)
 
     def _save_reply(self, chat_id: str, text: str, status: str, files: list[str] | None = None,
-                    stats: StreamStats | None = None, project_id: str | None = None) -> ChatMessage | None:
+                    stats: StreamStats | None = None, project_id: str | None = None,
+                    model_name: str | None = None) -> ChatMessage | None:
         has_stats = stats is not None and stats.eval_count > 0
         replace = self._replace_reply_chat == chat_id
         self._replace_reply_chat = None
@@ -537,6 +552,7 @@ class MainWindow(QMainWindow):
                 tokens_per_sec=round(stats.tokens_per_second, 2) if has_stats else None,
                 project_id=project_id,
                 replace=replace,
+                model_name=model_name,
             )
         except AppError as exc:
             self._storage_failed(exc, card=chat_id == self._current_chat_id)
@@ -557,7 +573,8 @@ class MainWindow(QMainWindow):
         """Run ensure_ready() in a worker. Never blocks the UI thread."""
         if self._health_handle is not None:
             return
-        worker = HealthCheckWorker(self._client_factory())
+        self._health_checked_model = self._selected_model
+        worker = HealthCheckWorker(self._new_client())
         worker.finished.connect(self._on_health)
         worker.error.connect(self._on_health_error)
         self._health_handle = start_worker(worker, self)
@@ -565,9 +582,63 @@ class MainWindow(QMainWindow):
     def _on_health(self, result: object) -> None:
         self._health_handle = None
         if isinstance(result, HealthResult):
+            if result.models is not None:
+                self._model_presence = dict(result.models)
+                self._ollama_version = result.version
+                if self._selected_model != self._health_checked_model:
+                    result = self._health_for_selected() or result  # the user toggled during the check
             self.set_health(result)
             self.healthChecked.emit(result)
         self._resume_pending()
+
+    # --- model selection (Quality 14B / Fast 7B) ------------------------------------------
+    def selected_model(self) -> str:
+        return self._selected_model
+
+    def _new_client(self) -> OllamaClient:
+        client = self._client_factory()
+        client.model = self._selected_model  # exactly the chat's choice; no fallback
+        return client
+
+    def _health_for_selected(self) -> HealthResult | None:
+        """The status for the selected model from the last check (None if not checked yet)."""
+        if self._model_presence is None:
+            return None
+        name = self._selected_model
+        if self._model_presence.get(name):
+            return HealthResult(ConnectionState.CONNECTED, f"Ollama {self._ollama_version} · {name} is ready",
+                                self._ollama_version, dict(self._model_presence))
+        message = f"Model {name} is not installed in Ollama. {create_hint(self.config, name)}"
+        return HealthResult(ConnectionState.MODEL_MISSING, message, self._ollama_version, dict(self._model_presence))
+
+    def _apply_model(self, model_name: str) -> None:
+        self._selected_model = model_name
+        self.composer.set_fast_mode(model_name == self.config.fast_model_name)
+        self.sidebar.status_card.set_model_name(model_name)
+        updated = self._health_for_selected()
+        if updated is not None and self._health.state in (ConnectionState.CONNECTED, ConnectionState.MODEL_MISSING):
+            self.set_health(updated)
+
+    def _model_for_chat(self, chat: Conversation | None) -> str:
+        if chat is not None and chat.model_name in (self.config.model_name, self.config.fast_model_name):
+            return chat.model_name
+        return self.config.model_name
+
+    def default_model(self) -> str:
+        return self.config.fast_model_name if self._fast_default else self.config.model_name
+
+    def set_fast_mode(self, fast: bool) -> None:
+        """The user's explicit choice for the current chat (saved on the conversation)."""
+        model_name = self.config.fast_model_name if fast else self.config.model_name
+        chat_id = self._current_chat_id
+        if chat_id is not None:
+            try:
+                self.store.set_chat_model(chat_id, model_name)
+            except AppError as exc:
+                self._storage_failed(exc)
+        self._apply_model(model_name)
+        if self._model_presence is None and self._health_checks and not self.demo_mode:
+            self.check_health()
 
     def _on_health_error(self, error: object) -> None:
         self._health_handle = None
@@ -723,6 +794,7 @@ class MainWindow(QMainWindow):
     def _begin_stream(self, chat_id: str, worker, status: str, kind: str = JOB_CHAT) -> None:
         self._active_message = self._add_assistant_widget(status)
         self._active_chat_id = chat_id
+        self._active_model = self._selected_model
         self._job_kind = kind
         self._got_first_token = False
         worker.token.connect(self._on_token)
@@ -740,12 +812,12 @@ class MainWindow(QMainWindow):
         logger.info("Demo stream started")
 
     def _start_ollama(self, chat_id: str, messages: list[dict]) -> None:
-        worker = OllamaStreamWorker(self._client_factory(), messages)
+        worker = OllamaStreamWorker(self._new_client(), messages)
         self._begin_stream(chat_id, worker, STATUS_LOADING)
         logger.info("Model stream started (%d messages)", len(messages))
 
     def _start_plan(self, chat_id: str, request: str) -> None:
-        worker = PlanWorker(self._client_factory(), request, self.service.system_prompt)
+        worker = PlanWorker(self._new_client(), request, self.service.system_prompt)
         self._begin_stream(chat_id, worker, STATUS_PLANNING, JOB_PLAN)
         logger.info("Project planning started")
 
@@ -775,7 +847,7 @@ class MainWindow(QMainWindow):
         self._active_writer_root = writer.root
         if card is not None:
             card.set_state(f"Generating into {writer.root}")
-        worker = GenerateWorker(self._client_factory(), plan, writer, self.service.system_prompt)
+        worker = GenerateWorker(self._new_client(), plan, writer, self.service.system_prompt)
         self._active_plan = plan
         self._begin_stream(chat_id, worker, f"Generating {len(plan.files)} files…", JOB_GENERATE)
         logger.info("Project generation started: %d files", len(plan.files))
@@ -838,7 +910,7 @@ class MainWindow(QMainWindow):
         data = result if isinstance(result, dict) else {}
         text = str(data.get("text", ""))
         files = list(data.get("files", []))
-        status = demo.DEMO_STATUS if self.demo_mode else finished_status(self.config, data.get("stats"))
+        status = demo.DEMO_STATUS if self.demo_mode else finished_status(self._active_model, data.get("stats"))
         message = self._active_message
         chat_id = self._active_chat_id
         if message is not None:
@@ -848,7 +920,8 @@ class MainWindow(QMainWindow):
             message.finish(status=status)
         if chat_id:
             stats = data.get("stats") if isinstance(data.get("stats"), StreamStats) else None
-            saved = self._save_reply(chat_id, text, "complete", files, stats)
+            saved = self._save_reply(chat_id, text, "complete", files, stats,
+                                     model_name=None if self.demo_mode else self._active_model)
             if saved is not None and message is not None:
                 message.message_id = saved.id
         self._end_stream()
@@ -868,10 +941,10 @@ class MainWindow(QMainWindow):
         if message is not None:
             message.set_text(text)
             message.finish(status=STATUS_PLAN_READY)
-        saved = self._save_reply(chat_id, text, "complete")
+        saved = self._save_reply(chat_id, text, "complete", model_name=self._active_model)
         if saved is not None and message is not None:
             message.message_id = saved.id
-        card = PlanCard(result)
+        card = PlanCard(result, fast_mode=self._active_model == self.config.fast_model_name)
         card.applyRequested.connect(lambda c=card, cid=chat_id: self.start_generation(cid, c.plan, c))
         self.chat_view.add_card(card)
         self.plan_cards.append(card)
@@ -904,7 +977,8 @@ class MainWindow(QMainWindow):
                 self._storage_failed(exc)
         if chat_id:
             saved = self._save_reply(chat_id, text, "stopped" if result.cancelled else "complete",
-                                     result.written, project_id=project.id if project else None)
+                                     result.written, project_id=project.id if project else None,
+                                     model_name=self._active_model)
             if saved is not None and message is not None:
                 message.message_id = saved.id
         self._show_project_files(result.plan.project_name, result.root)
@@ -1320,26 +1394,34 @@ class MainWindow(QMainWindow):
                 self.config = replace(self.config, command_timeout_s=float(max(1, min(3600, int(float(raw))))))
             except ValueError:
                 logger.warning("Ignoring a bad saved command timeout: %r", raw)
+        try:
+            self._fast_default = self.store.get_setting(DEFAULT_MODEL_MODE_SETTING) == "fast"
+        except AppError:
+            self._fast_default = False
 
-    def _edit_settings(self, export_dir: str, timeout_s: float) -> tuple[str, int] | None:
-        dialog = SettingsDialog(export_dir, timeout_s, self, model_name=self.config.model_name)
+    def _edit_settings(self, export_dir: str, timeout_s: float) -> tuple | None:
+        dialog = SettingsDialog(export_dir, timeout_s, self, model_name=self.config.model_name,
+                                fast_default=self._fast_default, fast_model_name=self.config.fast_model_name)
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
-            return dialog.values()
+            return (*dialog.values(), dialog.fast_default())
         return None
 
     def open_settings(self) -> None:
         values = self.settings_editor(self.export_dir(), self.config.command_timeout_s)
         if values is None:
             return
-        export_dir, timeout_s = values
+        export_dir, timeout_s = values[0], values[1]
+        fast_default = bool(values[2]) if len(values) > 2 else self._fast_default
         try:
             if export_dir:
                 self.store.set_setting(EXPORT_DIR_SETTING, export_dir)
             self.store.set_setting(COMMAND_TIMEOUT_SETTING, str(int(timeout_s)))
+            self.store.set_setting(DEFAULT_MODEL_MODE_SETTING, "fast" if fast_default else "quality")
         except AppError as exc:
             self._storage_failed(exc)
             return
         self.config = replace(self.config, command_timeout_s=float(timeout_s))
+        self._fast_default = fast_default
         self.show_toast("Settings saved.")
 
     # --- lifecycle -------------------------------------------------------------

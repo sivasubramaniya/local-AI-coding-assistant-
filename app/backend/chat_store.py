@@ -42,6 +42,7 @@ class ChatMessage:
     seq: int | None = None
     created_at: str | None = None
     project_id: str | None = None  # the project the file cards belong to
+    model_name: str | None = None  # the model that wrote an assistant message
 
 
 @dataclass
@@ -134,6 +135,10 @@ class ChatStore(Protocol):
         ...
 
     def rename_chat(self, chat_id: str, title: str) -> Conversation: ...
+
+    def set_chat_model(self, chat_id: str, model_name: str) -> None:
+        """The model this chat uses from now on (the user's explicit Quality/Fast choice)."""
+        ...
 
     def delete_chat(self, chat_id: str) -> None:
         """Delete the chat and its messages. Linked projects keep existing, unlinked."""

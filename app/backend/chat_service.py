@@ -128,6 +128,7 @@ class ChatService:
         tokens_per_sec: float | None = None,
         project_id: str | None = None,
         replace: bool = False,
+        model_name: str | None = None,
     ) -> ChatMessage | None:
         """Save an assistant message.
 
@@ -138,7 +139,8 @@ class ChatService:
         if not text or not self.store.chat_exists(chat_id):
             return None
         message = ChatMessage("assistant", text, files=list(files or []), status=status,
-                              eval_count=eval_count, tokens_per_sec=tokens_per_sec, project_id=project_id)
+                              eval_count=eval_count, tokens_per_sec=tokens_per_sec, project_id=project_id,
+                              model_name=model_name)
         if replace:
             return self.store.replace_reply(chat_id, message)
         return self.store.add_message(chat_id, message)

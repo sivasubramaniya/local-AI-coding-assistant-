@@ -2,9 +2,10 @@
 
 A native Windows 11 desktop coding assistant (Python + PySide6) that runs **fully offline**. Every
 answer comes from a model on your own computer through [Ollama](https://ollama.com) — the exact model
-`qwen2.5-coder-14b:latest`. No cloud APIs, no telemetry, no model fallback.
+`qwen2.5-coder-14b:latest` by default, or the optional `qwen2.5-coder-7b:latest` when you pick
+**Fast mode** for a chat. No cloud APIs, no telemetry, no silent model switching.
 
-Version **1.0.0** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
+Version **1.1.0** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
 
 ![Chat with a highlighted code answer](docs/screenshots/03-answer.png)
 
@@ -18,6 +19,9 @@ Screenshots are captured by the REAL end-to-end test (`tests/test_integration_ap
 
 - **Coding chat** with streaming answers, Stop, Regenerate, syntax-highlighted code blocks with Copy,
   and a coding-only system prompt (off-topic requests are politely redirected).
+- **Quality (14B) / Fast (7B)**: choose the model per chat in the composer (default for new chats in
+  Settings). The choice is saved with the chat, every answer shows which model wrote it, and a missing
+  model is reported with the exact `ollama create` command — the app never falls back to the other one.
 - **Persistent history** in SQLite: chats, messages, feedback and projects survive restarts.
 - **Project mode**: the model plans the files first (Plan card); nothing is written until you click
   **Generate files**. Files appear as cards and in the preview panel (code view + offline HTML/Markdown preview).
@@ -34,6 +38,7 @@ Screenshots are captured by the REAL end-to-end test (`tests/test_integration_ap
 - Windows 11 (64-bit), 16 GB RAM or more, ~12 GB free disk
 - [Ollama](https://ollama.com) running on `http://localhost:11434`
 - The model `qwen2.5-coder-14b:latest` (created from `qwen2.5-coder:14b` with `ollama/Modelfile`)
+- Optional for Fast mode: `qwen2.5-coder-7b:latest` (from `qwen2.5-coder:7b` with `ollama/Modelfile.fast`)
 - From source: Python 3.12 (3.10–3.12 supported)
 - Optional: JDK 21 (Java projects), Git
 
@@ -47,6 +52,8 @@ troubleshooting, antivirus and SmartScreen notes).
 ```powershell
 ollama pull qwen2.5-coder:14b
 ollama create qwen2.5-coder-14b -f .\ollama\Modelfile
+ollama pull qwen2.5-coder:7b                                     # optional, Fast mode
+ollama create qwen2.5-coder-7b -f .\ollama\Modelfile.fast        # optional, Fast mode
 py -V:3.12 -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt     # or requirements.txt to only run the app
@@ -95,7 +102,7 @@ app/
   prompts/     coding_system_prompt.txt
   ui/          main_window.py, chat_view.py, message_widgets.py, agent_widgets.py, preview_panel.py,
                sidebar.py, composer.py, dialogs.py, workers.py, offline_web.py, theme.py, icons/
-ollama/Modelfile           the exact model settings
+ollama/Modelfile           the exact model settings (Modelfile.fast: the optional 7B Fast mode)
 packaging/                 PyInstaller spec
 scripts/                   REAL benchmark, Java sample, Ollama restart helper
 docs/                      INSTALL, OFFLINE, PERFORMANCE, TEST_REPORT, samples, screenshots
@@ -119,6 +126,7 @@ Settings come from `app/config.py`, overridable with environment variables (`LAA
 | `LAA_HEALTH_INTERVAL_S` | `10` |
 | `LAA_LOG_LEVEL` | `INFO` |
 | `LAA_MODEL_NAME` | `qwen2.5-coder-14b:latest` (overriding logs a warning; never changed automatically) |
+| `LAA_FAST_MODEL_NAME` | `qwen2.5-coder-7b:latest` (Fast mode only; overriding logs a warning) |
 
 ## Performance note
 

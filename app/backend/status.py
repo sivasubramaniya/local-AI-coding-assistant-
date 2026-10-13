@@ -22,6 +22,7 @@ class HealthResult:
     state: ConnectionState
     message: str
     version: str | None = None
+    models: dict[str, bool] | None = None  # presence of BOTH configured models (Quality and Fast)
 
 
 def stub_connection_state() -> ConnectionState:

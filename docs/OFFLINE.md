@@ -11,7 +11,8 @@ verified automatically, and a manual checklist for the owner to run with Wi-Fi o
 | Windows 11 | 10.0.26300 | everything | yes |
 | Python | 3.12.10 (in `venv`) | running from source | yes (source runs only; the packaged build bundles it) |
 | Ollama | 0.40.2 | local model server on `http://localhost:11434` | yes |
-| Model `qwen2.5-coder-14b:latest` | from `qwen2.5-coder:14b` + `ollama/Modelfile` | all AI answers | yes |
+| Model `qwen2.5-coder-14b:latest` | from `qwen2.5-coder:14b` + `ollama/Modelfile` | all AI answers (default) | yes |
+| Model `qwen2.5-coder-7b:latest` | from `qwen2.5-coder:7b` + `ollama/Modelfile.fast` | Fast mode, only when selected | optional |
 | JDK (Microsoft OpenJDK 21) | 21.0.12 | compiling/running generated Java projects | optional |
 | Git | system Git | `git status/diff/log/init/add/commit` in projects | optional |
 

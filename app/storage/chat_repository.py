@@ -45,7 +45,7 @@ def _message(row: sqlite3.Row) -> ChatMessage:
     return ChatMessage(
         role=row["role"], content=row["content"], status=row["status"], eval_count=row["eval_count"],
         tokens_per_sec=row["tokens_per_sec"], feedback=row["feedback"], id=row["id"], seq=row["seq"],
-        created_at=row["created_at"],
+        created_at=row["created_at"], model_name=row["model_name"],
     )
 
 
@@ -153,9 +153,9 @@ class SqliteChatRepository:
         ).fetchone()[0]
         cursor = conn.execute(
             "INSERT INTO messages (conversation_id, seq, role, content, status, eval_count, tokens_per_sec,"
-            " feedback, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " feedback, created_at, model_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (chat_id, seq, message.role, message.content, message.status, message.eval_count,
-             message.tokens_per_sec, message.feedback, now),
+             message.tokens_per_sec, message.feedback, now, message.model_name),
         )
         for position, path in enumerate(message.files):
             conn.execute("INSERT INTO message_files (message_id, position, path, project_id) VALUES (?, ?, ?, ?)",
@@ -165,6 +165,7 @@ class SqliteChatRepository:
             role=message.role, content=message.content, files=list(message.files), status=message.status,
             eval_count=message.eval_count, tokens_per_sec=message.tokens_per_sec, feedback=message.feedback,
             id=cursor.lastrowid, seq=seq, created_at=now, project_id=message.project_id,
+            model_name=message.model_name,
         )
 
     def _touch(self, conn: sqlite3.Connection, chat_id: str, now: str) -> None:
@@ -200,6 +201,13 @@ class SqliteChatRepository:
             self._require_chat(conn, chat_id)
             conn.execute("UPDATE conversations SET title = ? WHERE id = ?", (title, chat_id))
         return self.get_chat(chat_id)
+
+    def set_chat_model(self, chat_id: str, model_name: str) -> None:
+        if not model_name or not model_name.strip():
+            raise StorageError("Could not save the model choice.", detail="empty model name")
+        with self._tx("save the model choice") as conn:
+            self._require_chat(conn, chat_id)
+            conn.execute("UPDATE conversations SET model_name = ? WHERE id = ?", (model_name, chat_id))
 
     def delete_chat(self, chat_id: str) -> None:
         with self._tx("delete the chat") as conn:

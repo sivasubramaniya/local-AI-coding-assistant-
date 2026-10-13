@@ -226,7 +226,7 @@ class OllamaStreamWorker(StreamWorker):
 
 
 class HealthCheckWorker(StreamWorker):
-    """Runs ensure_ready() (only /api/version and /api/tags) and reports a HealthResult."""
+    """Checks Ollama and BOTH models (only /api/version and /api/tags); the state is for client.model."""
 
     def __init__(self, client: OllamaClient) -> None:
         super().__init__()
@@ -234,9 +234,12 @@ class HealthCheckWorker(StreamWorker):
 
     def work(self) -> object:
         try:
-            version = self._client.ensure_ready()
-            name = self._client.config.model_name
-            return HealthResult(ConnectionState.CONNECTED, f"Ollama {version} · {name} is ready", version)
+            version, models = self._client.check_models()
+            name = self._client.model
+            if models.get(name):
+                return HealthResult(ConnectionState.CONNECTED, f"Ollama {version} · {name} is ready", version, models)
+            return HealthResult(ConnectionState.MODEL_MISSING, self._client.model_missing_error().message,
+                                version, models)
         except ModelNotFoundError as exc:
             return HealthResult(ConnectionState.MODEL_MISSING, exc.message)
         except OllamaUnavailableError as exc:

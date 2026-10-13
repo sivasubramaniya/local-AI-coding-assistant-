@@ -53,6 +53,31 @@ without leaving orphaned `llama-server` processes. Those orphans held VRAM, whic
 
 - Close GPU/RAM-heavy apps while generating (browsers, other AI apps). Measurements varied by more than
   any setting did, mostly from background load (another `ollama launch` session was running at one point).
-- A smaller model would fit more of the GPU, but the project requires `qwen2.5-coder-14b:latest`, so this
-  was not tried.
+- A smaller model fits more of the GPU. Since Phase 13 the optional **Fast mode** (`qwen2.5-coder-7b:latest`,
+  chosen per chat) does exactly that — see below. The default stays `qwen2.5-coder-14b:latest`.
 - Keep answers and projects small; generation time scales with output length (~0.3 s per token).
+
+## Fast mode: 14B vs 7B (Phase 13, REAL, same machine and method)
+
+`scripts/benchmark.py --model quality|fast --cold --runs 3` (the same `is_prime` request; both models are
+unloaded before each set, so run 1 includes the load). Both use the same settings
+(temperature 0.2, top_p 0.8, num_ctx 8192).
+
+| Model | Size loaded | CPU/GPU | Runs (tok/s) | Avg tok/s | Cold load | Wall per answer (s) | Avg wall |
+|---|---|---|---|---|---|---|---|
+| Quality `qwen2.5-coder-14b:latest` (default) | 10 GB | 79% / 21% | 3.62, 2.41, 3.54 | **3.19** | 15.9 s | 101.1, 138.7, 64.7 | 101.5 s |
+| Fast `qwen2.5-coder-7b:latest` (optional) | 5.4 GB | 58% / 42% | 6.42, 6.67, 6.12 | **6.40** | 9.8 s | 58.9, 45.9, 54.4 | 53.1 s |
+
+The 7B model generates about **2× faster** (more of it fits on the 4 GB GPU) and loads ~40% faster.
+
+### Project generation with 7B ("Create a simple Python to-do CLI app with tests")
+
+| Run | Files | Tests | Repair rounds | Time | Report |
+|---|---|---|---|---|---|
+| 7B run 1 | 2 of 3 (the test file came back with 2 code blocks twice) | not runnable | — | ~3.6 min | `docs/samples/todo-fast-REPORT-run1.md` |
+| 7B run 2 (after the parser fix) | 3 of 3 | 4 failed + 2 errors → 1 failed → **4 passed** | **2** | 6.6 min | `docs/samples/todo-fast-REPORT.md` |
+| 14B, same request (REAL app test, Phase 12) | 3–6 | passed | 0–1 | ~9–15 min | `tests/test_integration_app.py` runs |
+
+Fast mode answers sooner but its first drafts need more repair rounds, which is what the plan
+card says when Fast mode is on. The app never picks a model by itself: each chat uses the model
+the user chose.

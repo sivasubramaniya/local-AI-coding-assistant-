@@ -251,3 +251,24 @@ def test_empty_markdown_still_fails():
 
     with pytest.raises(ResponseFormatError):
         parse_markdown_file("```markdown\n```")
+
+
+
+# --- found by the REAL Fast-mode (7B) run: a file block plus a "run it" snippet ------------------
+def test_extra_snippet_in_another_language_is_ignored():
+    answer = ("```python\ndef test_add():\n    assert 1 + 1 == 2\n```\n\nRun it with:\n```bash\npytest\n```")
+    assert parse_file_block(answer, "tests/test_todo.py") == "def test_add():\n    assert 1 + 1 == 2\n"
+
+
+@pytest.mark.parametrize("answer", [
+    "```python\na = 1\n```\n```python\nb = 2\n```",  # two blocks in the file's language: ambiguous
+    "```bash\nx\n```\n```text\ny\n```",  # none in the file's language
+])
+def test_ambiguous_multi_block_answers_are_still_rejected(answer):
+    with pytest.raises(ResponseFormatError):
+        parse_file_block(answer, "app.py")
+
+
+def test_without_a_path_two_blocks_are_rejected():
+    with pytest.raises(ResponseFormatError):
+        parse_file_block("```python\na = 1\n```\n```bash\nrun\n```")

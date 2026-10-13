@@ -4,7 +4,8 @@ Model output is only ever parsed as data. Nothing in it is executed.
 
 - ``parse_plan`` accepts one JSON object (optionally inside a single ```json fence)
   with the exact keys of ``ProjectPlan``. Paths are checked with the path validator.
-- ``parse_file_block`` accepts an answer with exactly one complete fenced block.
+- ``parse_file_block`` accepts an answer with exactly one complete fenced block, or several
+  blocks of which exactly one is in the file's language (models often add a "run it" snippet).
 - A malformed answer is retried once with a corrective message; a second failure is
   reported for that file. Files that succeeded are kept.
 """
@@ -248,15 +249,38 @@ def parse_plan(text: str) -> ProjectPlan:
                        tuple(planned), data["run_instructions"].strip(), data["test_command"].strip())
 
 
-def parse_file_block(text: str) -> str:
-    """Strictly parse a FILE answer: exactly one complete, non-empty fenced block."""
+LANGUAGES_BY_SUFFIX = {
+    ".py": {"python", "py", "python3"}, ".java": {"java"}, ".js": {"javascript", "js"},
+    ".ts": {"typescript", "ts"}, ".html": {"html"}, ".htm": {"html"}, ".css": {"css"},
+    ".json": {"json"}, ".sql": {"sql"}, ".ps1": {"powershell", "ps1"}, ".sh": {"bash", "sh", "shell"},
+    ".go": {"go", "golang"}, ".rs": {"rust", "rs"}, ".cs": {"csharp", "cs", "c#"}, ".cpp": {"cpp", "c++"},
+    ".c": {"c"}, ".yaml": {"yaml", "yml"}, ".yml": {"yaml", "yml"}, ".toml": {"toml"}, ".xml": {"xml"},
+    ".txt": {"text", "txt", "plaintext", ""}, ".cfg": {"ini", "cfg", "text"}, ".ini": {"ini"},
+}
+
+
+def _block_language(block: FencedBlock) -> str:
+    return (block.info.split() or [""])[0].lower()
+
+
+def parse_file_block(text: str, path: str | None = None) -> str:
+    """Strictly parse a FILE answer: exactly one complete, non-empty fenced block.
+
+    With ``path``, an answer with several blocks is accepted only if exactly one of them is in
+    the file's language (for example the .py file plus a ```bash "how to run it" snippet).
+    """
     blocks, unclosed = fenced_blocks(text)
     if unclosed:
         raise ResponseFormatError("The file was cut off.", detail="unclosed code fence")
     if not blocks:
         raise ResponseFormatError("The answer has no code block.", detail="no fenced code block")
     if len(blocks) > 1:
-        raise ResponseFormatError("The answer must contain exactly one code block.", detail=f"{len(blocks)} blocks")
+        languages = LANGUAGES_BY_SUFFIX.get(PurePosixPath(path).suffix.lower()) if path else None
+        matching = [b for b in blocks if languages is not None and _block_language(b) in languages]
+        if len(matching) != 1:
+            raise ResponseFormatError("The answer must contain exactly one code block.",
+                                      detail=f"{len(blocks)} blocks")
+        blocks = matching
     content = blocks[0].content
     if not content.strip():
         raise ResponseFormatError("The code block is empty.", detail="empty block")
@@ -334,7 +358,11 @@ class ProjectGenerator:
         return replace(plan, request=request.strip())
 
     def generate_file(self, plan: ProjectPlan, planned: PlannedFile, earlier: dict[str, str] | None = None) -> str:
-        parse = parse_markdown_file if _is_markdown(planned.path) else parse_file_block
+        if _is_markdown(planned.path):
+            parse = parse_markdown_file
+        else:
+            def parse(answer: str) -> str:
+                return parse_file_block(answer, planned.path)
         content = self._ask(file_messages(plan, planned, self._system_prompt, earlier), parse,
                             "exactly one complete fenced code block")
         assert isinstance(content, str)

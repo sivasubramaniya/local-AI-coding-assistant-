@@ -26,6 +26,10 @@ DISCLAIMER = "Local model output can contain mistakes. Review code before runnin
 PLACEHOLDER = "Ask a coding question…"
 
 
+QUALITY_LABEL = "Quality (14B)"
+FAST_LABEL = "Fast (7B)"
+
+
 class ComposerInput(QPlainTextEdit):
     """Multiline input: Enter submits, Shift+Enter inserts a newline, grows to 8 lines."""
 
@@ -79,6 +83,7 @@ class ComposerInput(QPlainTextEdit):
 class Composer(QWidget):
     sendRequested = Signal(str, bool)  # text, project mode
     stopRequested = Signal()
+    fastModeToggled = Signal(bool)  # True = Fast (7B), False = Quality (14B)
     attachmentsChanged = Signal(list)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -126,6 +131,14 @@ class Composer(QWidget):
         self.project_chip.setToolTip("When on, the request goes to the project generator")
         self.project_chip.toggled.connect(self._on_project_toggled)
 
+        self.model_chip = QPushButton(QUALITY_LABEL)
+        self.model_chip.setObjectName("projectChip")
+        self.model_chip.setCheckable(True)
+        self.model_chip.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.model_chip.setToolTip("Model for this chat: Quality (14B, default) or Fast (7B). "
+                                   "The app never switches models by itself.")
+        self.model_chip.toggled.connect(self._on_model_toggled)
+
         self.send_button = QToolButton()
         self.send_button.setObjectName("sendButton")
         self.send_button.setFixedSize(QSize(theme.SEND_BUTTON_SIZE, theme.SEND_BUTTON_SIZE))
@@ -136,6 +149,7 @@ class Composer(QWidget):
         center = Qt.AlignmentFlag.AlignVCenter
         row.addWidget(self.attach_button, 0, center)
         row.addWidget(self.input, 1, center)
+        row.addWidget(self.model_chip, 0, center)
         row.addWidget(self.project_chip, 0, center)
         row.addWidget(self.send_button, 0, center)
 
@@ -154,6 +168,20 @@ class Composer(QWidget):
 
     def project_mode(self) -> bool:
         return self.project_chip.isChecked()
+
+    def fast_mode(self) -> bool:
+        return self.model_chip.isChecked()
+
+    def set_fast_mode(self, fast: bool) -> None:
+        """Show a chat's saved choice without emitting fastModeToggled."""
+        blocked = self.model_chip.blockSignals(True)
+        self.model_chip.setChecked(fast)
+        self.model_chip.blockSignals(blocked)
+        self.model_chip.setText(FAST_LABEL if fast else QUALITY_LABEL)
+
+    def _on_model_toggled(self, fast: bool) -> None:
+        self.model_chip.setText(FAST_LABEL if fast else QUALITY_LABEL)
+        self.fastModeToggled.emit(fast)
 
     def attachments(self) -> list[str]:
         return list(self._attachments)

@@ -97,7 +97,7 @@ class SettingsDialog(QDialog):
     """Export folder, command timeout and a theme placeholder. Values are saved by the caller."""
 
     def __init__(self, export_dir: str, command_timeout_s: float, parent: QWidget | None = None,
-                 model_name: str = "") -> None:
+                 model_name: str = "", fast_default: bool = False, fast_model_name: str = "") -> None:
         from PySide6.QtWidgets import QComboBox, QFileDialog, QFormLayout, QLineEdit, QSpinBox
 
         from app.__version__ import __version__
@@ -125,6 +125,12 @@ class SettingsDialog(QDialog):
         self.timeout_spin.setSuffix(" s")
         self.timeout_spin.setValue(int(command_timeout_s))
         form.addRow("Command timeout", self.timeout_spin)
+        self.model_combo = QComboBox()
+        self.model_combo.addItems(["Quality (14B) — default", "Fast (7B)"])
+        self.model_combo.setCurrentIndex(1 if fast_default else 0)
+        self.model_combo.setToolTip(f"Model for new chats. Fast uses {fast_model_name or 'the 7B model'}; "
+                                    "each chat keeps its own choice.")
+        form.addRow("New chats use", self.model_combo)
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Dark", "Light (coming later)"])
         self.theme_combo.model().item(1).setEnabled(False)
@@ -163,3 +169,6 @@ class SettingsDialog(QDialog):
 
     def values(self) -> tuple[str, int]:
         return self.export_edit.text().strip(), self.timeout_spin.value()
+
+    def fast_default(self) -> bool:
+        return self.model_combo.currentIndex() == 1

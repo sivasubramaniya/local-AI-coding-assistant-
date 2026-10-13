@@ -58,6 +58,7 @@ REQUEST = (
     "and README.md with build, run and test commands using javac and java. Standard library only."
 )
 MAX_ROUNDS = 3
+TODO_REQUEST = "Create a simple Python to-do CLI app with tests"
 
 
 def portable(text: str) -> str:
@@ -80,16 +81,21 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=None, help="projects folder (default: config.projects_dir)")
     parser.add_argument("--copy-to", type=Path, default=ROOT / "docs" / "samples" / "java-calculator")
     parser.add_argument("--repair-demo", action="store_true", help="repair an injected bug instead of generating")
+    parser.add_argument("--model", choices=("quality", "fast"), default="quality",
+                        help="quality = qwen2.5-coder-14b (default), fast = qwen2.5-coder-7b")
+    parser.add_argument("--todo", action="store_true",
+                        help=f"generate '{TODO_REQUEST}' (Python) instead of the Java calculator")
     args = parser.parse_args()
 
     config = load_config()
     system_prompt = load_system_prompt()
-    title = "Java repair demo" if args.repair_demo else "Java calculator sample"
-    report: list[str] = [f"# {title} — REAL model run", ""]
+    title = "Java repair demo" if args.repair_demo else ("Python to-do sample" if args.todo else "Java calculator sample")
+    model = config.fast_model_name if args.model == "fast" else config.model_name
+    report: list[str] = [f"# {title} — REAL model run ({model})", ""]
     started = time.monotonic()
-    with OllamaClient(config) as client:
+    with OllamaClient(config, model=model) as client:
         version = client.ensure_ready()
-        log(report, f"- Ollama {version}, model `{config.model_name}` (REAL)")
+        log(report, f"- Ollama {version}, model `{model}` (REAL)")
 
         def chat(messages: list[dict]) -> str:
             t0 = time.monotonic()
@@ -114,7 +120,7 @@ def main() -> int:
                         "`a + b` -> `a - b` in Calculator.add (MOCK bug, REAL repair)")
         else:
             generator = ProjectGenerator(chat, system_prompt)
-            plan = generator.make_plan(REQUEST)
+            plan = generator.make_plan(TODO_REQUEST if args.todo else REQUEST)
             log(report, f"- Plan: `{plan.project_name}`, {len(plan.files)} files: "
                         + ", ".join(f"`{f.path}`" for f in plan.files))
             writer = ProjectWriter(args.out or config.projects_dir, plan.project_name)
@@ -127,10 +133,11 @@ def main() -> int:
         runner = ToolRunner(writer.root, timeout_s=120)
         commands = default_test_commands(writer.root)
         if commands is None:
-            log(report, "- BLOCKED: no Java sources were generated, nothing to compile.")
-            return 1
-        log(report, "- Test commands (allowlisted): " + "; ".join(f"`{' '.join(c)}`" for c in commands))
-        for round_no in range(MAX_ROUNDS + 1):
+            log(report, "- BLOCKED: no tests or sources were generated, nothing to run.")
+            commands = []
+        else:
+            log(report, "- Test commands (allowlisted): " + "; ".join(f"`{' '.join(c)}`" for c in commands))
+        for round_no in range(MAX_ROUNDS + 1 if commands else 0):
             try:
                 results = runner.run_sequence(commands)
             except ToolUnavailableError as exc:
@@ -138,7 +145,7 @@ def main() -> int:
                 break
             ok = all(r.ok for r in results) and len(results) == len(commands)
             label = "initial run" if round_no == 0 else f"after repair round {round_no}"
-            log(report, f"\n## Checks {label}: {'PASSED' if ok else 'FAILED'} (REAL javac/java)\n")
+            log(report, f"\n## Checks {label}: {'PASSED' if ok else 'FAILED'} (REAL commands)\n")
             report.append(portable(results_markdown(results, len(commands))))
             if ok or round_no == MAX_ROUNDS:
                 break
@@ -164,6 +171,11 @@ def main() -> int:
     log(report, f"\nTotal time: {(time.monotonic() - started) / 60:.1f} min")
     if args.repair_demo:
         (ROOT / "docs" / "samples" / "java-repair-REPORT.md").write_text("\n".join(report) + "\n", encoding="utf-8")
+        return 0
+    if args.todo:
+        name = f"todo-{args.model}-REPORT.md"
+        (ROOT / "docs" / "samples" / name).write_text("\n".join(report) + "\n", encoding="utf-8")
+        print(f"Report: docs/samples/{name}")
         return 0
     if args.copy_to:
         if args.copy_to.exists():

@@ -178,6 +178,22 @@ stop at every phase boundary and wait for approval.
 
 ---
 
+## Phase 13 — Fast Mode  `[x]`
+
+> Owner decision 2026-10-12: the default stays `qwen2.5-coder-14b:latest`; ONE optional model,
+> `qwen2.5-coder-7b:latest`, may be selected by the user per chat. No silent fallback.
+
+- [x] `ollama/Modelfile.fast` (FROM qwen2.5-coder:7b, same settings); `qwen2.5-coder-7b:latest` created
+- [x] Config `fast_model_name` (validated; `LAA_FAST_MODEL_NAME` override logs a warning)
+- [x] Quality (14B) / Fast (7B) toggle in the composer; default for new chats in Settings (`app_settings`)
+- [x] Model saved on the chat and on each answer (DB migration v3: `messages.model_name`); status lines show the model
+- [x] Health check covers both models; status card shows the selected one; missing model → amber + exact command, never a fallback
+- [x] Project generation uses the chat's model; Plan card note in Fast mode
+- [x] `--check` reports both models and the default
+- [x] MOCK tests (10) + REAL tests (7B is_prime, 7B off-topic) + REAL 14B-vs-7B benchmark + REAL 7B project run
+
+---
+
 ## Final Deliverables Checklist
 
 - [x] Native Windows desktop app (PySide6)
@@ -216,3 +232,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-12 | 10 | Offline verification (automated): code audit, socket guard (--offline-guard), loopback end-to-end test of chat/generation/storage/export, missing-model/Ollama-stopped checks, HTML preview blocks remote requests, docs/OFFLINE.md with the manual Wi-Fi-off checklist | 601 passed, 1 skipped; guarded suite passes (intermittent exit crash, see known issues) |
 | 2026-10-12 | 11 | Windows packaging: PyInstaller spec (onedir, windowed), bundled prompt/icons/Modelfile/docs, --check console attach + logs\check.txt, bundled-Modelfile hint, worker shutdown at exit, INSTALL.md, TEST_REPORT.md, README | 601 passed, 1 skipped (MOCK); 4 integration passed (REAL); packaged exe --check and window launch OK (REAL) |
 | 2026-10-12 | 12 | Polish and release 1.0.0: performance trials (nothing kept), REAL end-to-end app test + 6 fixes, build 567 → 322 MB, gitignore/secret scan, version 1.0.0, README/CHANGELOG/LICENSE | 611 passed, 1 skipped (MOCK); 9 integration passed (REAL); exe --check OK |
+| 2026-10-13 | 13 | Fast mode: optional user-selected `qwen2.5-coder-7b:latest` per chat (no fallback), DB v3, both-model health and --check, plan-card note, parser fix found by the REAL 7B run; v1.1.0 | 628 passed, 1 skipped (MOCK); 11 integration passed incl. 1 re-run after a sleep-related Ollama timeout (REAL); 7B 6.40 vs 14B 3.19 tok/s |

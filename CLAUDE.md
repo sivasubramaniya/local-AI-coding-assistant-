@@ -19,7 +19,8 @@ It runs fully offline once the model and dependencies are installed.
 | Language | Python |
 | Desktop UI | PySide6 (Qt Widgets) |
 | AI runtime | Ollama (local API at http://localhost:11434) |
-| Model | `qwen2.5-coder-14b:latest` (exact name, never substitute) |
+| Model | `qwen2.5-coder-14b:latest` (default; exact name, never substitute) |
+| Fast model (optional) | `qwen2.5-coder-7b:latest` — only when the user selects Fast mode (owner decision 2026-10-12) |
 | Database | SQLite (`sqlite3`) |
 | Tests | pytest |
 | Packaging | PyInstaller |
@@ -81,7 +82,10 @@ Invoke-RestMethod http://localhost:11434/api/tags
 6. **No installs or downloads without permission.** No `pip install` or `ollama pull` unless approved.
 7. **No global system changes** (PATH, environment variables, registry) without permission.
 8. **No cloud AI APIs.** All inference goes through the local Ollama API.
-9. **Never switch the model.** If `qwen2.5-coder-14b:latest` is missing, report it and stop.
+9. **Never switch the model.** `qwen2.5-coder-14b:latest` is the default. The only other allowed model is
+   `qwen2.5-coder-7b:latest`, used only when the user explicitly selects Fast mode for a chat (owner
+   decision 2026-10-12). There is no silent fallback in either direction: if the selected model is
+   missing, report it with the exact `ollama create` command and stop.
 10. **Never execute arbitrary model-generated commands.** Use the allowlist in `tool_runner.py`.
 11. **Show commands before running** anything that modifies files or the environment.
 12. **Keep the UI responsive.** Long work (inference, generation, tests) runs in Qt worker threads.

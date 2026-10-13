@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 APP_DIR_NAME = "LocalAIAssistant"
 FALLBACK_DIR_NAME = ".local_ai_assistant"
 DEFAULT_MODEL_NAME = "qwen2.5-coder-14b:latest"
+# Optional Fast mode (owner decision 2026-10-12). Used only when the user selects it; never as a fallback.
+DEFAULT_FAST_MODEL_NAME = "qwen2.5-coder-7b:latest"
 VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 
@@ -45,6 +47,7 @@ class AppConfig:
     stream_read_timeout_s: float = 300.0
     health_interval_s: float = 10.0
     command_timeout_s: float = 60.0
+    fast_model_name: str = DEFAULT_FAST_MODEL_NAME
 
     @property
     def model_base_name(self) -> str:
@@ -134,8 +137,12 @@ def validate_config(config: AppConfig) -> AppConfig:
             f"Invalid config value for 'ollama_url': host {host!r} is not local. "
             f"Only {', '.join(LOOPBACK_HOSTS)} are allowed, so no remote or cloud service is ever called."
         )
-    if not config.model_name.strip():
-        raise ConfigError("Invalid config value for 'model_name': it must not be empty.")
+    for field_name in ("model_name", "fast_model_name"):
+        value = getattr(config, field_name)
+        if not value.strip() or value != value.strip() or " " in value:
+            raise ConfigError(f"Invalid config value for '{field_name}': {value!r} is not a model name.")
+    if config.fast_model_name == config.model_name:
+        raise ConfigError("Invalid config value for 'fast_model_name': it must differ from 'model_name'.")
     if config.request_timeout_s <= 0:
         raise ConfigError("Invalid config value for 'request_timeout_s': it must be greater than 0.")
     if config.connect_timeout_s <= 0:
@@ -177,12 +184,22 @@ def load_config(env: Mapping[str, str] | None = None) -> AppConfig:
         )
         model_name = override
 
+    fast_model_name = DEFAULT_FAST_MODEL_NAME
+    fast_override = env.get("LAA_FAST_MODEL_NAME")
+    if fast_override is not None and fast_override != DEFAULT_FAST_MODEL_NAME:
+        logger.warning(
+            "Fast model name overridden by LAA_FAST_MODEL_NAME: %r (default is %r).",
+            fast_override, DEFAULT_FAST_MODEL_NAME,
+        )
+        fast_model_name = fast_override
+
     data_dir = Path(env["LAA_DATA_DIR"]) if env.get("LAA_DATA_DIR") else default_data_dir(env)
     export_dir = Path(env["LAA_EXPORT_DIR"]) if env.get("LAA_EXPORT_DIR") else default_desktop_dir()
 
     config = AppConfig(
         app_name="Local AI Assistant",
         model_name=model_name,
+        fast_model_name=fast_model_name,
         ollama_url=env.get("LAA_OLLAMA_URL", "http://localhost:11434").rstrip("/"),
         request_timeout_s=_parse_float("request_timeout_s", env.get("LAA_REQUEST_TIMEOUT_S", "120")),
         connect_timeout_s=_parse_float("connect_timeout_s", env.get("LAA_CONNECT_TIMEOUT_S", "5")),

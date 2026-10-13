@@ -78,10 +78,15 @@ CREATE TABLE message_files (
 );
 """
 
+SCHEMA_V3 = """
+ALTER TABLE messages ADD COLUMN model_name TEXT;
+"""
+
 # Ordered (version, SQL). Append new versions; never edit a released one.
 MIGRATIONS: list[tuple[int, str]] = [
     (1, SCHEMA_V1),
     (2, SCHEMA_V2),  # Phase 6: file cards of generated/edited files
+    (3, SCHEMA_V3),  # Phase 13: which model wrote each answer (Quality 14B or Fast 7B)
 ]
 
 _SCHEMA_VERSION_SQL = (

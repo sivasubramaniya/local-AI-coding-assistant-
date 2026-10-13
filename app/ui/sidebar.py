@@ -154,6 +154,14 @@ class ModelStatusCard(QFrame):
     def status_text(self) -> str:
         return self.status_label.text()
 
+    def set_model_name(self, model_name: str) -> None:
+        """The selected model (Quality 14B or Fast 7B) shown on the card."""
+        self.name_label.setText(model_name.removesuffix(":latest"))
+        self.name_label.setToolTip(model_name)
+
+    def model_text(self) -> str:
+        return self.name_label.text()
+
     def set_compact(self, compact: bool) -> None:
         self.text_box.setVisible(not compact)
 

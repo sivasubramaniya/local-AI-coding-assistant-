@@ -53,18 +53,18 @@ def test_schema_created_at_latest_with_pragmas(db_path):
         indexes = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
         assert {"idx_messages_conversation_seq", "idx_conversations_updated"} <= indexes
         rows = conn.execute("SELECT version, applied_at FROM schema_version").fetchall()
-        assert [r[0] for r in rows] == [1, 2] and rows[0][1].endswith("+00:00")
+        assert [r[0] for r in rows] == list(range(1, latest_version() + 1)) and rows[0][1].endswith("+00:00")
         assert isinstance(conn.execute("SELECT 1").fetchone(), sqlite3.Row)
     finally:
         conn.close()
-    assert latest_version() == 2
+    assert latest_version() == 3
 
 
 def test_reopen_does_not_reapply(db_path):
     open_database(db_path).close()
     conn = open_database(db_path)
     try:
-        assert conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == 2
+        assert conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == latest_version()
     finally:
         conn.close()
 
@@ -244,7 +244,7 @@ def test_invalid_message_rejected_before_write(repo):
 
 
 # --- migrations ----------------------------------------------------------------------
-V_NEXT = (3, "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;\n"
+V_NEXT = (latest_version() + 1, "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;\n"
          "CREATE INDEX idx_conversations_pinned ON conversations (pinned);")
 
 
@@ -256,7 +256,8 @@ def test_fake_next_migration_upgrades_and_keeps_data(db_path):
 
     conn = open_database(db_path, [*MIGRATIONS, V_NEXT])
     try:
-        assert [r[0] for r in conn.execute("SELECT version FROM schema_version ORDER BY version")] == [1, 2, 3]
+        assert [r[0] for r in conn.execute("SELECT version FROM schema_version ORDER BY version")] == \
+            list(range(1, latest_version() + 2))
         row = conn.execute("SELECT title, pinned FROM conversations").fetchone()
         assert row["title"] == "Keep me" and row["pinned"] == 0
         assert conn.execute("SELECT content FROM messages").fetchone()[0] == "keep me"
@@ -266,14 +267,14 @@ def test_fake_next_migration_upgrades_and_keeps_data(db_path):
 
 def test_broken_migration_rolls_back_whole_step(db_path):
     open_database(db_path).close()
-    bad = (3, "ALTER TABLE conversations ADD COLUMN pinned INTEGER;\nTHIS IS NOT SQL;")
+    bad = (latest_version() + 1, "ALTER TABLE conversations ADD COLUMN pinned INTEGER;\nTHIS IS NOT SQL;")
     with pytest.raises(StorageError):
         open_database(db_path, [*MIGRATIONS, bad])
     conn = open_database(db_path)
     try:
         columns = [r[1] for r in conn.execute("PRAGMA table_info(conversations)")]
         assert "pinned" not in columns
-        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == 2
+        assert conn.execute("SELECT MAX(version) FROM schema_version").fetchone()[0] == latest_version()
     finally:
         conn.close()
 
@@ -327,15 +328,15 @@ def test_inspect_database_is_read_only(db_path):
     repo.close()
     digest = _sha(db_path)
     info = inspect_database(db_path)
-    assert (info.schema_version, info.chat_count, info.error) == (2, 2, None)
+    assert (info.schema_version, info.chat_count, info.error) == (latest_version(), 2, None)
     assert _sha(db_path) == digest
 
 
 def test_repository_schema_version(repo):
-    assert repo.schema_version() == latest_version() == 2
+    assert repo.schema_version() == latest_version() == 3
 
 
-def test_real_v1_database_upgrades_to_v2_and_keeps_data(db_path):
+def test_real_v1_database_upgrades_to_latest_and_keeps_data(db_path):
     v1 = SqliteChatRepository(open_database(db_path, MIGRATIONS[:1]))
     chat = v1.create_chat()
     v1._conn.execute(
@@ -344,7 +345,7 @@ def test_real_v1_database_upgrades_to_v2_and_keeps_data(db_path):
     v1.close()
     repo = SqliteChatRepository.open(db_path)
     try:
-        assert repo.schema_version() == 2
+        assert repo.schema_version() == latest_version()
         assert [m.content for m in repo.get_messages(chat.id)] == ["old message"]
         assert repo.get_messages(chat.id)[0].files == []
     finally:
@@ -381,3 +382,35 @@ def test_message_files_round_trip_and_cascade(repo):
     repo.delete_chat(chat.id)
     assert repo._conn.execute("SELECT COUNT(*) FROM message_files").fetchone()[0] == 0
     assert repo.get_project(project.id).conversation_id is None
+
+
+
+# --- v3: model per message and per chat (Phase 13, Fast mode) ---------------------------------
+def test_v2_database_upgrades_to_v3_and_keeps_data(db_path):
+    v2 = SqliteChatRepository(open_database(db_path, MIGRATIONS[:2]))
+    chat = v2.create_chat(model_name="qwen2.5-coder-14b:latest")
+    v2._conn.execute(
+        "INSERT INTO messages (conversation_id, seq, role, content, status, created_at)"
+        " VALUES (?, 1, 'assistant', 'old answer', 'complete', '2026-01-01')", (chat.id,))
+    v2.close()
+    repo = SqliteChatRepository.open(db_path)
+    try:
+        assert repo.schema_version() == 3
+        old = repo.get_messages(chat.id)[0]
+        assert old.content == "old answer" and old.model_name is None  # unknown for old rows
+        assert repo.get_chat(chat.id).model_name == "qwen2.5-coder-14b:latest"
+    finally:
+        repo.close()
+
+
+def test_message_and_chat_model_round_trip(repo):
+    chat = repo.create_chat(model_name="qwen2.5-coder-14b:latest")
+    repo.add_message(chat.id, ChatMessage("user", "q"))
+    repo.add_message(chat.id, ChatMessage("assistant", "a", model_name="qwen2.5-coder-7b:latest"))
+    assert repo.get_messages(chat.id)[1].model_name == "qwen2.5-coder-7b:latest"
+    repo.set_chat_model(chat.id, "qwen2.5-coder-7b:latest")
+    assert repo.get_chat(chat.id).model_name == "qwen2.5-coder-7b:latest"
+    with pytest.raises(StorageError):
+        repo.set_chat_model(chat.id, " ")
+    with pytest.raises(StorageError):
+        repo.set_chat_model("missing", "qwen2.5-coder-7b:latest")

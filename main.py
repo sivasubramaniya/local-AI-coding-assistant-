@@ -43,7 +43,8 @@ def _check_summary(config: AppConfig, prompt: str) -> str:
         f"{config.app_name} {__version__} - environment check",
         f"  Version       : {__version__}",
         f"  Python        : {platform.python_version()} ({sys.executable})",
-        f"  Model         : {config.model_name}",
+        f"  Model         : {config.model_name} (default, Quality)",
+        f"  Fast model    : {config.fast_model_name} (optional, only when Fast mode is selected)",
         f"  Ollama URL    : {config.ollama_url}",
         *ollama_lines,
         f"  Options       : temperature={config.temperature}, top_p={config.top_p}, "
@@ -104,6 +105,12 @@ def _ollama_report(config: AppConfig) -> tuple[list[str], list[str]]:
         warnings.append(
             f"Model {config.model_name} is not installed. " + create_hint(config)
         )
+    fast_present = config.fast_model_name in models
+    if fast_present:
+        lines.append("  Fast present  : yes (exact match)")
+    else:
+        lines.append(f"  Fast present  : no (Fast mode unavailable; never replaced by another model). "
+                     f"{create_hint(config, config.fast_model_name)}")
     return lines, warnings
 
 

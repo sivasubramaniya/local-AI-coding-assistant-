@@ -2,6 +2,27 @@
 
 All notable changes to Local AI Assistant. Summarised from the `PLAN.md` changelog; dates are 2026.
 
+## [1.1.0] — 2026-10-12
+
+### Added
+- **Fast mode** (owner decision): an optional second model, `qwen2.5-coder-7b:latest`
+  (`ollama/Modelfile.fast`, same settings as the default). Chosen per chat with the **Quality (14B) /
+  Fast (7B)** toggle in the composer; the default for new chats is set in Settings. The default model is
+  still `qwen2.5-coder-14b:latest`, and the app never switches models by itself.
+- The chosen model is saved on the chat and on every answer (database schema v3: `messages.model_name`);
+  status lines show which model answered.
+- Health checks look at both models; the status card shows the selected one. A missing selected model gives
+  the amber "Model missing" state with the exact `ollama create` command — no fallback in either direction.
+- `--check` reports both models (present/missing) and which one is the default.
+- The Plan card notes "Fast mode: quicker, may need more repair rounds" when Fast mode is on.
+- REAL measurements: 7B is about 2× faster (6.40 vs 3.19 tok/s); a 7B to-do project passed its tests after
+  2 repair rounds (`docs/PERFORMANCE.md`).
+
+### Fixed
+- File answers with an extra snippet in another language (for example a `bash` "run it" block) were
+  rejected; now accepted only when exactly one block is in the file's language (found by the 7B run).
+- `new_chat()` did not show the chat's model in the composer and status card.
+
 ## [1.0.0] — 2026-10-12
 
 First release.
@@ -55,3 +76,4 @@ First release.
 | 10 | Offline verification (automated part) |
 | 11 | Windows packaging |
 | 12 | Polish and release: performance trials, real-app test, smaller build, v1.0.0 |
+| 13 | Fast mode: optional, user-selected 7B model per chat; v1.1.0 |

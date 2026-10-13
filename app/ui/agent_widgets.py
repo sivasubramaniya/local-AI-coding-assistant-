@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 from app.ui import theme
 
 DIFF_MAX_HEIGHT = 320
+FAST_PLAN_NOTE = "Fast mode: quicker, may need more repair rounds."
 
 
 def _button(text: str, name: str) -> QPushButton:
@@ -100,10 +101,14 @@ class _DecisionCard(QFrame):
 class PlanCard(_DecisionCard):
     """Shows the planned files before anything is written. Apply starts generation."""
 
-    def __init__(self, plan, parent: QWidget | None = None) -> None:
+    def __init__(self, plan, parent: QWidget | None = None, fast_mode: bool = False) -> None:
         super().__init__(f"Plan: {plan.project_name}", "Generate files", parent)
         self.plan = plan
+        self.fast_note: QLabel | None = None
         self.body.addWidget(_label(f"{plan.description}  ·  {plan.language}", "agentText"))
+        if fast_mode:
+            self.fast_note = _label(FAST_PLAN_NOTE, "agentText")
+            self.body.addWidget(self.fast_note)
         self.file_labels: list[QLabel] = []
         for planned in plan.files:
             label = _label(f"•  {planned.path}  —  {planned.purpose}", "agentText")

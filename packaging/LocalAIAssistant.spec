@@ -28,6 +28,7 @@ datas = [
     (str(ROOT / "app" / "prompts" / "coding_system_prompt.txt"), "app/prompts"),
     (str(ROOT / "app" / "ui" / "icons"), "app/ui/icons"),
     (str(ROOT / "ollama" / "Modelfile"), "docs"),
+    (str(ROOT / "ollama" / "Modelfile.fast"), "docs"),
     (str(ROOT / "docs" / "INSTALL.md"), "docs"),
     (str(ROOT / "docs" / "OFFLINE.md"), "docs"),
     (str(ROOT / "README.md"), "docs"),

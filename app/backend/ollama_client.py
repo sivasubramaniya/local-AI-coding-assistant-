@@ -1,7 +1,8 @@
 """Synchronous client for the local Ollama HTTP API (call it from worker threads).
 
 Safety rules enforced here:
-- Only ``config.model_name`` is ever sent. There is no fallback model.
+- Only the client's ``model`` is ever sent: ``config.model_name`` (default) or, when the user
+  selected Fast mode for the chat, ``config.fast_model_name``. There is no fallback model.
 - The base URL comes from config, which only allows loopback hosts.
 - Proxy environment variables are ignored (``trust_env=False``).
 - Prompt and code content is never logged; DEBUG logs carry sizes and counts only.
@@ -25,24 +26,28 @@ from app.errors import AppError, ModelNotFoundError, OllamaUnavailableError
 logger = logging.getLogger(__name__)
 
 MODELFILE_PATH = r".\ollama\Modelfile"
+FAST_MODELFILE_PATH = r".\ollama\Modelfile.fast"
 
 
-def modelfile_path() -> str:
+def modelfile_path(fast: bool = False) -> str:
     """The Modelfile to use: the bundled copy in a packaged build, else the project's ollama folder."""
+    name = "Modelfile.fast" if fast else "Modelfile"
     bundle_root = getattr(sys, "_MEIPASS", None)
     if getattr(sys, "frozen", False) and bundle_root:
-        return f'"{bundle_root}\\docs\\Modelfile"'
-    return MODELFILE_PATH
+        return f'"{bundle_root}\\docs\\{name}"'
+    return FAST_MODELFILE_PATH if fast else MODELFILE_PATH
 
 
-def create_command(config: AppConfig) -> str:
-    """The command that creates the configured model name from the Modelfile."""
-    return f"ollama create {config.model_base_name} -f {modelfile_path()}"
+def create_command(config: AppConfig, model: str | None = None) -> str:
+    """The command that creates ``model`` (default: the main model) from its Modelfile."""
+    model = model or config.model_name
+    fast = model == config.fast_model_name
+    return f"ollama create {model.removesuffix(':latest')} -f {modelfile_path(fast)}"
 
 
-def create_hint(config: AppConfig) -> str:
+def create_hint(config: AppConfig, model: str | None = None) -> str:
     where = "in PowerShell" if getattr(sys, "frozen", False) else "from the project folder"
-    return f"Run this {where}: {create_command(config)}"
+    return f"Run this {where}: {create_command(config, model)}"
 
 
 @dataclass(frozen=True)
@@ -131,8 +136,11 @@ def _is_model_missing(message: str) -> bool:
 class OllamaClient:
     """One client per worker. ``abort()`` closes only the active stream response."""
 
-    def __init__(self, config: AppConfig, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(self, config: AppConfig, transport: httpx.BaseTransport | None = None,
+                 model: str | None = None) -> None:
         self.config = config
+        # The one model this client sends. Chosen by the caller (the chat's selection); never changed here.
+        self.model = model or config.model_name
         self.last_stats: StreamStats | None = None
         self._lock = threading.Lock()
         self._active: httpx.Response | None = None
@@ -159,8 +167,8 @@ class OllamaClient:
             detail=f"{type(exc).__name__}: {exc}",
         )
 
-    def model_missing_error(self, available: list[str] | None = None) -> ModelNotFoundError:
-        name = self.config.model_name
+    def model_missing_error(self, available: list[str] | None = None, model: str | None = None) -> ModelNotFoundError:
+        name = model or self.model
         if available is None:
             try:
                 available = self.list_models()
@@ -170,7 +178,7 @@ class OllamaClient:
         parts = [f"Model {name} is not installed in Ollama."]
         if matches:
             parts.append(f"Similar installed models: {', '.join(matches)} (not used automatically).")
-        parts.append(create_hint(self.config))
+        parts.append(create_hint(self.config, name))
         return ModelNotFoundError(" ".join(parts), detail=f"installed: {', '.join(available) or 'none'}")
 
     def _check_status(self, response: httpx.Response) -> None:
@@ -195,7 +203,7 @@ class OllamaClient:
 
     def _payload(self, messages: list[dict], stream: bool) -> dict:
         return {
-            "model": self.config.model_name,
+            "model": self.model,
             "messages": messages,
             "stream": stream,
             "keep_alive": self.config.keep_alive,
@@ -217,15 +225,22 @@ class OllamaClient:
 
     def has_model(self, name: str | None = None) -> bool:
         """Exact match, tag included. 'qwen2.5-coder:14b' does not count as 'qwen2.5-coder-14b:latest'."""
-        return (name or self.config.model_name) in self.list_models()
+        return (name or self.model) in self.list_models()
 
     def ensure_ready(self) -> str:
-        """Check Ollama and the exact model without loading it. Returns the Ollama version."""
+        """Check Ollama and this client's exact model without loading it. Returns the Ollama version."""
         version = self.get_version()
         models = self.list_models()
-        if self.config.model_name not in models:
+        if self.model not in models:
             raise self.model_missing_error(models)
         return version
+
+    def check_models(self) -> tuple[str, dict[str, bool]]:
+        """Version plus presence of BOTH configured models (only /api/version and /api/tags)."""
+        version = self.get_version()
+        installed = set(self.list_models())
+        names = (self.config.model_name, self.config.fast_model_name)
+        return version, {name: name in installed for name in names}
 
     # --- chat ------------------------------------------------------------------
     def chat(self, messages: list[dict]) -> str:

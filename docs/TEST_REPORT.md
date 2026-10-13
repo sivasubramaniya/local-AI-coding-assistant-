@@ -1,4 +1,4 @@
-# Final Test Report — Local AI Assistant 1.0.0
+# Final Test Report — Local AI Assistant 1.1.0
 
 Date: 2026-10-12 · Windows 11 Home 10.0.26300 · Python 3.12.10 · Ollama 0.40.2 ·
 model `qwen2.5-coder-14b:latest` (from `qwen2.5-coder:14b`, runs about 79% CPU / 21% GPU, ~3 tok/s) ·
@@ -11,9 +11,9 @@ server). **REAL** = the real local model and/or real compilers and processes.
 
 | Suite | Command | Result | Kind |
 |---|---|---|---|
-| Unit + GUI (offscreen) | `python -m pytest -v` | **611 passed, 1 skipped**, 9 deselected (integration) | MOCK model; real SQLite, files, subprocesses (python, javac, java) |
+| Unit + GUI (offscreen) | `python -m pytest -v` | **628 passed, 1 skipped**, 11 deselected (integration) | MOCK model; real SQLite, files, subprocesses (python, javac, java) |
 | Same, network blocked | `python -m pytest --offline-guard` | **601 passed, 1 skipped** | MOCK model, loopback sockets only |
-| Integration | `python -m pytest -m integration -v` | **9 passed** in 25.3 min | REAL model |
+| Integration | `python -m pytest -m integration -v` | **11 passed** (10 in the full run + 1 re-run after a sleep-related Ollama timeout) | REAL models (14B + 7B) |
 | Coverage | `python -m pytest --cov=app --cov=main` | **88%** of app code | — |
 | Compile | `python -m compileall -q app main.py scripts` | exit 0 | — |
 | Java sample (generate → compile → test) | `scripts/run_java_sample.py` | run 2: 4/4 files, `javac` + plain test class **PASSED** (9.0 min) | REAL model + REAL JDK |
@@ -22,6 +22,25 @@ server). **REAL** = the real local model and/or real compilers and processes.
 
 The one skip: `tests/test_validation.py::test_symlink_escape_is_rejected` — creating a symlink needs
 Developer Mode or admin rights on this machine. The junction-escape test (no privilege needed) ran and passed.
+
+## Release 1.1.0 verification (Phase 13 — Fast mode, 2026-10-12/13)
+
+| Check | Result | Kind |
+|---|---|---|
+| `python -m compileall -q app main.py scripts` | exit 0 | — |
+| `python -m pytest -v` | **628 passed, 1 skipped**, 11 deselected (integration) | MOCK model |
+| `python -m pytest -m integration -v` | **10 passed, 1 failed** in the full run; the failure was Ollama's "timed out waiting for llama-server to start" while Windows slept (Kernel-Power 42 at 04:29, resume 06:50); that test **passed** when re-run alone (2.3 min) | REAL models |
+| — new: `test_fast_is_prime_is_valid_python`, `test_fast_off_topic_question_is_redirected` on `qwen2.5-coder-7b:latest` | passed | REAL 7B |
+| 14B vs 7B speed (3 cold runs each, `scripts/benchmark.py`) | 3.19 vs **6.40 tok/s**; cold load 15.9 vs 9.8 s; avg wall 101.5 vs 53.1 s | REAL |
+| 7B to-do project (`scripts/run_java_sample.py --todo --model fast`) | run 1: test file rejected (2 blocks twice) → parser fix; run 2: 3/3 files, tests **passed after 2 repair rounds** (6.6 min) | REAL 7B |
+| `python main.py --check` | version 1.1.0; both models listed, present; default = 14B | REAL |
+| Rebuilt exe `--check` | exit 0, 322 MB, `Modelfile.fast` bundled; missing fast model shows the bundled create command | REAL |
+
+Fast mode MOCK tests (`tests/test_fast_mode.py`): default is 14B; the toggle sends the 7B name and the stats
+show it; the choice persists per chat across restart; v2→v3 migration keeps data; a missing 7B gives the amber
+state with the exact command and sends **no** request (no fallback to 14B); a missing 14B while Fast is selected
+still works with 7B; health checks cover both models with `/api/version` + `/api/tags` only; the Settings default
+applies to new chats only; the plan card shows the Fast-mode note.
 
 ## Release 1.0.0 verification (Phase 12, 2026-10-12)
 

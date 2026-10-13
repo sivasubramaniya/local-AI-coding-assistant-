@@ -11,7 +11,8 @@ answers come from a model running on your own computer through Ollama.
 | 16 GB RAM or more | the 14B model needs about 10 GB | — |
 | ~12 GB free disk | model (9 GB) + app (~0.33 GB) | — |
 | **Ollama** | runs the model locally | `winget install Ollama.Ollama`, or the installer from ollama.com |
-| **Model** `qwen2.5-coder-14b:latest` | the only model the app uses | see step 2 |
+| **Model** `qwen2.5-coder-14b:latest` | the default model (Quality) | see step 2 |
+| Model `qwen2.5-coder-7b:latest` (optional) | Fast mode, only when you select it | see step 2 |
 | JDK 21 (optional) | compile/run generated Java projects | `winget install Microsoft.OpenJDK.21` |
 | Git (optional) | `git` commands inside generated projects | `winget install Git.Git` |
 
@@ -32,8 +33,22 @@ ollama create qwen2.5-coder-14b -f ".\_internal\docs\Modelfile"
 ```
 
 (From a source checkout use `ollama create qwen2.5-coder-14b -f .\ollama\Modelfile`.)
-Check it: `ollama list` must show `qwen2.5-coder-14b:latest`. The app never uses another model
-and never downloads anything itself.
+Check it: `ollama list` must show `qwen2.5-coder-14b:latest`. The app never downloads anything itself.
+
+### Optional: Fast mode (7B)
+
+Fast mode uses the smaller `qwen2.5-coder-7b:latest` (about 4.7 GB) for quicker answers. It is used
+**only** for chats where you choose **Fast (7B)** in the composer (or as the default for new chats in
+**Settings**). The app never switches models by itself: if the selected model is missing you get an
+amber "Model missing" status with the exact command, never a different model.
+
+```powershell
+ollama pull qwen2.5-coder:7b
+ollama create qwen2.5-coder-7b -f ".\_internal\docs\Modelfile.fast"
+```
+
+(From a source checkout: `ollama create qwen2.5-coder-7b -f .\ollama\Modelfile.fast`.) The Fast
+Modelfile uses the same settings as the default one (temperature 0.2, top_p 0.8, num_ctx 8192).
 
 ## 3. Install the app
 
