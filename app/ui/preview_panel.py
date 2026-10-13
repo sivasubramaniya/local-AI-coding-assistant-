@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import tempfile
 from pathlib import Path, PurePosixPath
 
 from PySide6.QtCore import QSize, Qt, QUrl, Signal
@@ -24,17 +23,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.errors import PathValidationError
 from app.ui import theme
 from app.ui.code_view import CodeView
 from app.ui.icons import icon_size, load_icon, set_themed_icon, set_themed_pixmap, themed
 from app.ui.markdown_render import render_markdown
+from app.validation.path_validator import PathValidator
 
 logger = logging.getLogger(__name__)
 
 PATH_ROLE = Qt.ItemDataRole.UserRole + 1
 HTML_SUFFIXES = {".html", ".htm"}
 MARKDOWN_SUFFIXES = {".md", ".markdown"}
-FALLBACK_NOTICE = "Basic preview: QtWebEngine is not installed, so scripts and modern CSS are not shown."
+FALLBACK_NOTICE = "Basic preview: CSS layout and JavaScript need the full preview or your browser."
+WEBENGINE_NOTICE = "Offline preview of the project file. Remote resources (internet) are blocked."
 
 
 def webengine_available() -> bool:
@@ -46,72 +48,100 @@ def webengine_available() -> bool:
     return True
 
 
-def preview_temp_dir() -> Path:
-    return Path(tempfile.gettempdir()) / "LocalAIAssistant-preview"
-
-
 class HtmlPreview(QWidget):
-    """Renders HTML with QWebEngineView when available, else a QTextBrowser fallback."""
+    """Renders a project's HTML file from its real path, so its CSS, JS and images load.
+
+    QWebEngineView when available (offline: remote requests are blocked), else a QTextBrowser
+    fallback with a clear notice. "Open in browser" always opens the real project file.
+    """
 
     def __init__(self, parent: QWidget | None = None, use_webengine: bool | None = None) -> None:
         super().__init__(parent)
         use_webengine = webengine_available() if use_webengine is None else use_webengine
         self._html = ""
         self._filename = "preview.html"
+        self._path: Path | None = None
+        self.loaded_url: QUrl | None = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.notice: QFrame | None = None
-        self.open_button: QPushButton | None = None
+        self.notice = QFrame()
+        self.notice.setObjectName("previewNotice")
+        notice_row = QHBoxLayout(self.notice)
+        notice_row.setContentsMargins(14, 8, 10, 8)
+        self.notice_text = QLabel(FALLBACK_NOTICE if not use_webengine else WEBENGINE_NOTICE)
+        self.notice_text.setObjectName("previewNoticeText")
+        self.notice_text.setWordWrap(True)
+        self.open_button = QPushButton("Open in browser")
+        self.open_button.setObjectName("linkButton")
+        self.open_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_button.clicked.connect(self.open_in_browser)
+        notice_row.addWidget(self.notice_text, 1)
+        notice_row.addWidget(self.open_button)
+        layout.addWidget(self.notice)
+
         if use_webengine:
             from PySide6.QtWebEngineWidgets import QWebEngineView
 
             from app.ui.offline_web import make_offline_page
 
             self.view = QWebEngineView(self)
-            self.page = make_offline_page(self.view, self)  # remote resources in previewed HTML are blocked
+            self.page = make_offline_page(self.view, self)  # local files only; remote requests are blocked
             self.view.setPage(self.page)
             self.is_fallback = False
         else:
-            self.notice = QFrame()
-            self.notice.setObjectName("previewNotice")
-            notice_row = QHBoxLayout(self.notice)
-            notice_row.setContentsMargins(14, 8, 10, 8)
-            text = QLabel(FALLBACK_NOTICE)
-            text.setObjectName("previewNoticeText")
-            text.setWordWrap(True)
-            self.open_button = QPushButton("Open in default browser")
-            self.open_button.setObjectName("linkButton")
-            self.open_button.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.open_button.clicked.connect(self.open_in_browser)
-            notice_row.addWidget(text, 1)
-            notice_row.addWidget(self.open_button)
-            layout.addWidget(self.notice)
             browser = QTextBrowser(self)
             browser.setObjectName("htmlFallback")
             browser.setOpenLinks(False)
             self.view = browser
             self.is_fallback = True
         layout.addWidget(self.view, 1)
+        self._update_open_button()
 
-    def set_html(self, html: str, filename: str) -> None:
+    def file_path(self) -> Path | None:
+        return self._path
+
+    def set_html(self, html: str, filename: str, path: Path | None = None) -> None:
+        """Show ``filename``. With ``path`` (the validated real file) it is loaded from disk."""
         self._html = html
         self._filename = PurePosixPath(filename).name or "preview.html"
-        self.view.setHtml(html)
+        self._path = path
+        if path is not None:
+            url = QUrl.fromLocalFile(str(path))
+            self.loaded_url = url
+            if self.is_fallback:
+                self.view.setSearchPaths([str(path.parent)])
+                self.view.setSource(url)
+            else:
+                self.view.load(url)
+        else:
+            self.loaded_url = None
+            self.view.setHtml(html)
+        self._update_open_button()
 
-    def write_temp_file(self) -> Path:
-        folder = preview_temp_dir()
-        folder.mkdir(parents=True, exist_ok=True)
-        path = folder / self._filename
-        path.write_text(self._html, encoding="utf-8")
-        return path
+    def reload(self) -> None:
+        """Reload the current file from disk (after an edit or a repair)."""
+        if self._path is None:
+            return
+        if self.is_fallback:
+            self.view.reload()
+        else:
+            self.view.load(QUrl.fromLocalFile(str(self._path)))
 
-    def open_in_browser(self) -> Path:
-        """User-initiated only: save the HTML to a temp file and open it in the default browser."""
-        path = self.write_temp_file()
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
-        return path
+    def _update_open_button(self) -> None:
+        has_file = self._path is not None and self._path.is_file()
+        self.open_button.setEnabled(has_file)
+        self.open_button.setToolTip(
+            f"Open {self._path} in your default browser" if has_file
+            else "Available for generated projects: the file must be saved in the project folder first.")
+
+    def open_in_browser(self) -> Path | None:
+        """User-initiated only: open the REAL project file (never a copy) in the default browser."""
+        if self._path is None or not self._path.is_file():
+            return None
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._path)))
+        return self._path
 
 
 def _round_button(icon: str, tooltip: str) -> QToolButton:
@@ -140,6 +170,7 @@ class PreviewPanel(QFrame):
         self._use_webengine = use_webengine
         self._project_name = ""
         self._files: dict[str, str] = {}
+        self._root: Path | None = None  # the project folder on disk (None for demo/in-memory files)
         self._current: str | None = None
 
         layout = QVBoxLayout(self)
@@ -260,9 +291,26 @@ class PreviewPanel(QFrame):
     def current_path(self) -> str | None:
         return self._current
 
-    def set_project(self, name: str, files: dict[str, str]) -> None:
+    def project_root(self) -> Path | None:
+        return self._root
+
+    def file_path(self, relative: str) -> Path | None:
+        """The real file for ``relative`` inside the project root, or None (outside / no root)."""
+        if self._root is None:
+            return None
+        try:
+            return PathValidator(self._root).resolve(relative)
+        except PathValidationError:
+            logger.warning("Preview refused a path outside the project: %r", relative)
+            return None
+
+    def set_project(self, name: str, files: dict[str, str], root: Path | None = None) -> None:
+        """Show a project's files. Re-showing the same project refreshes the open file (live reload)."""
+        reopen = self._current if (self._current in files and Path(root or "") == Path(self._root or "")
+                                   and name == self._project_name) else None
         self._project_name = name
         self._files = dict(files)
+        self._root = Path(root) if root is not None else None
         self.file_menu.clear()
         for path in self._files:
             self.file_menu.addAction(path, lambda p=path: self.open_file(p))
@@ -277,7 +325,9 @@ class PreviewPanel(QFrame):
             root.addChild(item)
         root.setExpanded(True)
         self.tree_toggle.setVisible(len(self._files) > 1)
-        if self._current not in self._files:
+        if reopen is not None:
+            self.open_file(reopen)  # live refresh after an edit, repair or regeneration
+        elif self._current not in self._files:
             self.show_empty()
 
     def clear_project(self) -> None:
@@ -320,7 +370,7 @@ class PreviewPanel(QFrame):
         suffix = PurePosixPath(self._current).suffix.lower()
         content = self._files[self._current]
         if tab == "preview" and suffix in HTML_SUFFIXES:
-            self.html_preview.set_html(content, self._current)
+            self.html_preview.set_html(content, self._current, self.file_path(self._current))
             self.stack.setCurrentIndex(self.PAGE_HTML)
             self.preview_tab.setChecked(True)
         elif tab == "preview" and suffix in MARKDOWN_SUFFIXES:

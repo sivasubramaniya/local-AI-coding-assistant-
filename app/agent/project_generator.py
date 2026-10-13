@@ -104,6 +104,8 @@ Rules:
 - At most {max_files} files. Relative paths with forward slashes, no '..', no absolute paths.
 - Include a README.md with build, run and test instructions.
 - Keep the project small and complete; prefer the standard library.
+- Web pages may only reference local files that are in this file list. For pictures and logos use
+  inline SVG or CSS shapes instead of image files you are not creating.
 
 Request:
 {request}"""
@@ -118,6 +120,8 @@ All files in the project:
 Write the complete content of the file `{path}` (purpose: {purpose}).
 It must work with the files already written above: use exactly their class, function and method names.
 Follow the original request exactly (for example, do not add libraries it rules out).
+Only reference local files from the list above (stylesheets, scripts, images); for pictures and logos use
+inline SVG or CSS instead of image files that are not in the list.
 Reply with exactly ONE fenced code block that contains the whole file and nothing else.
 {fence_hint}Do not use placeholders; the file must be complete."""
 

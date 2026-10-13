@@ -46,9 +46,17 @@ def make_offline_page(view, profile_owner):
                 self.blocked.append(url.toString())
                 logger.info("Preview blocked a network request to %s", url.host() or url.scheme())
 
+    from PySide6.QtWebEngineCore import QWebEngineSettings
+
     profile = QWebEngineProfile(profile_owner)  # no storage name: off the record
+    profile.setHttpCacheType(QWebEngineProfile.HttpCacheType.NoCache)  # edited CSS/JS show on reload
     interceptor = OfflineInterceptor(profile)
     profile.setUrlRequestInterceptor(interceptor)
     page = QWebEnginePage(profile, view)
+    settings = page.settings()
+    attribute = QWebEngineSettings.WebAttribute
+    settings.setAttribute(attribute.LocalContentCanAccessFileUrls, True)  # styles.css, script.js, images
+    settings.setAttribute(attribute.LocalContentCanAccessRemoteUrls, False)  # offline: never the internet
+    settings.setAttribute(attribute.JavascriptEnabled, True)  # local project scripts only (remote is blocked)
     page.offline_interceptor = interceptor  # keep a Python reference (and for tests)
     return page

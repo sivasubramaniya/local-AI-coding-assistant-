@@ -194,17 +194,20 @@ def test_html_fallback_when_webengine_unavailable(qtbot, themed_app, monkeypatch
     import app.ui.preview_panel as preview_module
 
     monkeypatch.setattr(preview_module, "webengine_available", lambda: False)
-    monkeypatch.setattr(preview_module, "preview_temp_dir", lambda: tmp_path)
     opened = []
     monkeypatch.setattr(preview_module.QDesktopServices, "openUrl", lambda url: opened.append(url))
     widget = HtmlPreview()
     qtbot.addWidget(widget)
-    assert widget.is_fallback and widget.open_button is not None
-    widget.set_html("<h1>Hello</h1>", "site/page.html")
+    assert widget.is_fallback and "CSS layout and JavaScript" in widget.notice_text.text()
+    widget.set_html("<h1>Hello</h1>", "site/page.html")  # no saved file (demo content)
     assert "Hello" in widget.view.toPlainText()
-    path = widget.open_in_browser()
-    assert path == tmp_path / "page.html" and path.read_text(encoding="utf-8") == "<h1>Hello</h1>"
-    assert opened and opened[0].toLocalFile().endswith("page.html")
+    assert not widget.open_button.isEnabled() and widget.open_in_browser() is None and opened == []
+    page = tmp_path / "page.html"
+    page.write_text("<h1>Saved</h1>", encoding="utf-8")
+    widget.set_html("<h1>Saved</h1>", "page.html", page)
+    assert widget.open_button.isEnabled()
+    assert widget.open_in_browser() == page
+    assert [u.toLocalFile() for u in opened] == [page.as_posix()]  # the real file, never a temp copy
 
 
 # --- dialogs -----------------------------------------------------------------------

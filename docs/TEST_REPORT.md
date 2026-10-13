@@ -1,4 +1,4 @@
-# Final Test Report — Local AI Assistant 1.1.1
+# Final Test Report — Local AI Assistant 1.2.1
 
 Date: 2026-10-12 · Windows 11 Home 10.0.26300 · Python 3.12.10 · Ollama 0.40.2 ·
 model `qwen2.5-coder-14b:latest` (from `qwen2.5-coder:14b`, runs about 79% CPU / 21% GPU, ~3 tok/s) ·
@@ -22,6 +22,20 @@ server). **REAL** = the real local model and/or real compilers and processes.
 
 The one skip: `tests/test_validation.py::test_symlink_escape_is_rejected` — creating a symlink needs
 Developer Mode or admin rights on this machine. The junction-escape test (no privilege needed) ran and passed.
+
+## Releases 1.2.0 and 1.2.1 (Phases 15–16, 2026-10-13)
+
+| Check | Result | Kind |
+|---|---|---|
+| `python -m pytest -v` | **663 passed, 1 skipped**, 12 deselected | MOCK model; real SQLite, files, QtWebEngine (offscreen) |
+| Theme tests (`tests/test_theme_switching.py`) | tokens, hex, WCAG AA contrast both palettes, live switch, System signal, persistence | — |
+| HTML preview tests (`tests/test_html_preview.py`) | CSS applied (`getComputedStyle` = `rgb(1, 2, 3)`), JS ran, remote image/CSS never loaded, live refresh, real-file Open, path refusal, placeholders, reports | real Chromium, offscreen |
+| REAL 7B portfolio (`tests/test_integration_preview.py`) | **passed**: 3/3 files, no missing references (the model used inline SVG), local stylesheet applied | REAL model |
+| Owner's existing `portfolio-website` | 2 missing images → placeholders; preview styled (CSS 18 rules, images 320 px) in source and in the packaged exe | REAL |
+| Exe `--check` | version 1.2.1, both models present | REAL |
+
+Notes: the System-theme test mocks the Windows scheme read (offscreen has none) but uses Qt's real
+`colorSchemeChanged` signal. Chromium prints "context lost" GPU warnings offscreen; assertions are unaffected.
 
 ## Release 1.1.1 (Phase 14 — pre-publish cleanup, 2026-10-13)
 

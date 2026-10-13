@@ -195,8 +195,13 @@ def run_gui(config: AppConfig, demo_mode: bool = False) -> int:
         store.close()
 
 
-def run_screenshot(config: AppConfig, path: Path, delay_ms: int, open_preview: bool) -> int:
-    """Scripted demo: one user message, a streamed answer, optional preview, then a capture."""
+def run_screenshot(config: AppConfig, path: Path, delay_ms: int, open_preview: bool,
+                   preview_project: Path | None = None) -> int:
+    """Scripted demo: one user message, a streamed answer, optional preview, then a capture.
+
+    With ``preview_project`` the preview shows that project's index.html from disk instead
+    (used to check the packaged app's HTML preview with a real generated project).
+    """
     from PySide6.QtCore import QTimer
 
     from app.ui import demo
@@ -222,7 +227,13 @@ def run_screenshot(config: AppConfig, path: Path, delay_ms: int, open_preview: b
         app.quit()
 
     def after_stream() -> None:
-        if open_preview:
+        if preview_project is not None:
+            from app.agent.coding_agent import read_project_files
+
+            root = preview_project.resolve()
+            window.preview.set_project(root.name, read_project_files(root), root)
+            window.open_file("index.html")
+        elif open_preview:
             window.open_file(demo.DEMO_ANSWER_FILES[0])
         QTimer.singleShot(delay_ms, capture)
 
@@ -240,6 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--screenshot", metavar="PATH", help="run a scripted demo and save a window capture")
     parser.add_argument("--delay", type=int, default=800, metavar="MS", help="wait before the capture (default 800)")
     parser.add_argument("--no-preview", action="store_true", help="capture with the preview panel closed")
+    parser.add_argument("--preview", metavar="PROJECT_DIR", help="with --screenshot: preview this project's index.html")
     parser.add_argument("--demo", action="store_true", help="use canned demo answers instead of the model")
     args = parser.parse_args(argv)
 
@@ -269,7 +281,8 @@ def main(argv: list[str] | None = None) -> int:
         print(summary)
         return EXIT_OK
     if args.screenshot:
-        return run_screenshot(config, Path(args.screenshot), max(0, args.delay), not args.no_preview)
+        return run_screenshot(config, Path(args.screenshot), max(0, args.delay), not args.no_preview,
+                              Path(args.preview) if args.preview else None)
     return run_gui(config, demo_mode=args.demo)
 
 

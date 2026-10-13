@@ -1,4 +1,4 @@
-"""Version 1.0.0 is shown in --check, --version and the Settings/About dialog."""
+﻿"""Version 1.0.0 is shown in --check, --version and the Settings/About dialog."""
 
 import re
 
@@ -10,7 +10,7 @@ from tests.test_main import UNUSED_LOCAL_URL, _run
 
 def test_version_format():
     assert re.fullmatch(r"\d+\.\d+\.\d+", __version__)
-    assert __version__ == "1.2.0"
+    assert __version__ == "1.2.1"
 
 
 def test_check_and_version_flag_show_the_version(tmp_path):

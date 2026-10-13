@@ -2,6 +2,24 @@
 
 All notable changes to Local AI Assistant. Summarised from the `PLAN.md` changelog; dates are 2026.
 
+## [1.2.1] — 2026-10-13
+
+### Fixed
+- **HTML project preview showed pages unstyled.** The preview loaded the HTML text with no base URL, so
+  `styles.css`, `script.js` and images could not resolve; "Open in browser" opened a temporary copy of only
+  the HTML. Now the preview loads the real file (`QWebEngineView.load(file URL)`; local file access on,
+  remote access off, JavaScript on for local files) and "Open in browser" opens the real project file
+  (disabled with a tooltip when there is no saved project). The path goes through the path validator.
+- The preview reloads the open file when the project is re-shown after an edit or repair.
+
+### Added
+- Missing-asset check after generation: missing images get grey placeholder images (listed as
+  "placeholder"); missing CSS/JS are reported in the result card, never invented. References that leave
+  the project (`../`, drive letters, root-relative, UNC) are reported as unsafe and never created.
+- The project validator checks that every local `src`/`href`/`url()` reference exists.
+- Generation prompts tell the model to reference only planned files and use inline SVG/CSS for pictures.
+- `main.py --screenshot PATH --preview PROJECT_DIR` and `scripts/preview_screenshot.py`.
+
 ## [1.2.0] — 2026-10-13
 
 ### Added

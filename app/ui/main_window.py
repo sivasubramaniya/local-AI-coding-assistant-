@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.agent.asset_check import check_references, create_placeholders
 from app.agent.coding_agent import (
     CONTEXT_TASKS,
     apply_changes,
@@ -969,8 +970,11 @@ class MainWindow(QMainWindow):
         project = self._active_project
         card = self._active_plan_card
         self._end_stream()
+        references = check_references(result.root, result.written)
+        create_placeholders(result.root, references)  # missing images -> visible grey placeholders
         report = validate_project(result.root, result.written)
-        text = f"{result.summary_markdown()}\n\n{report.summary()}"
+        parts = [result.summary_markdown(), references.summary_markdown(), report.summary()]
+        text = "\n\n".join(part for part in parts if part)
         if message is not None:
             message.set_text(text)
             for path in result.written:
@@ -1244,7 +1248,7 @@ class MainWindow(QMainWindow):
 
     def _show_project_files(self, name: str, root: Path) -> None:
         files = read_project_files(root, PREVIEW_MAX_CHARS) if root.is_dir() else {}
-        self.preview.set_project(name, files)
+        self.preview.set_project(name, files, root if root.is_dir() else None)
 
     def _load_chat_project(self, chat_id: str) -> None:
         """Show the chat's latest project in the preview panel (so file cards open)."""

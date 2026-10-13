@@ -5,13 +5,15 @@ answer comes from a model on your own computer through [Ollama](https://ollama.c
 `qwen2.5-coder-14b:latest` by default, or the optional `qwen2.5-coder-7b:latest` when you pick
 **Fast mode** for a chat. No cloud APIs, no telemetry, no silent model switching.
 
-Version **1.2.0** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
+Version **1.2.1** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
 
 ![Chat with a highlighted code answer](docs/screenshots/03-answer.png)
 
 | Project mode: plan first | Generated files in the preview | Tests and repair loop |
 |---|---|---|
 | ![Plan card](docs/screenshots/05-plan-card.png) | ![Generated project](docs/screenshots/06-generated-preview.png) | ![Tests](docs/screenshots/07-tests.png) |
+
+![Styled HTML preview of a generated project](docs/screenshots/preview-styled-exe.png)
 
 | Light theme | Dark theme |
 |---|---|
@@ -39,6 +41,9 @@ The design was inspired by modern chat-based developer tools.
 - **Safe by design**: path validation (no traversal, drive/UNC paths, reserved names or symlink escapes),
   an allowlisted command runner (`shell=False`, project folder only, timeouts), and model text is never executed.
 - **Export** to a folder or a verified ZIP, leaving out caches, virtual environments, backups and secrets.
+- **Real web preview**: generated HTML is previewed from its real file, so its CSS, JavaScript and images
+  work; **Open in browser** opens the actual project file. Missing images get visible placeholders and missing
+  CSS/JS are reported (never invented).
 - **Offline**: the Ollama URL must be loopback; the HTML preview blocks remote requests.
 
 ## Requirements

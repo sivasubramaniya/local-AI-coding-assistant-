@@ -217,6 +217,18 @@ stop at every phase boundary and wait for approval.
 
 ---
 
+## Phase 16 — Fix HTML Project Preview  `[x]`
+
+- [x] Diagnosed: preview used `setHtml()` without a base URL; "Open in browser" opened a temp copy of only the HTML; the portfolio referenced `assets/logo.png` and `assets/profile.jpg` that were never generated
+- [x] Preview loads the real file (WebEngine file URL; local files on, remote off); fallback states its limits
+- [x] "Open in browser" opens the real project file; disabled without a saved project; path validated
+- [x] Live refresh when the project is re-shown after edits/repairs
+- [x] Missing images → placeholders; missing CSS/JS reported; unsafe references refused; prompts updated
+- [x] Validator: all local HTML/CSS references must exist
+- [x] Tests (MOCK + REAL 7B portfolio) and screenshots (source and packaged exe)
+
+---
+
 ## Final Deliverables Checklist
 
 - [x] Native Windows desktop app (PySide6)
@@ -258,3 +270,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-13 | 13 | Fast mode: optional user-selected `qwen2.5-coder-7b:latest` per chat (no fallback), DB v3, both-model health and --check, plan-card note, parser fix found by the REAL 7B run; v1.1.0 | 628 passed, 1 skipped (MOCK); 11 integration passed incl. 1 re-run after a sleep-related Ollama timeout (REAL); 7B 6.40 vs 14B 3.19 tok/s |
 | 2026-10-13 | 14 | Pre-publish cleanup: personal paths removed from files and history (filter-repo, backup kept), neutral screenshots, personal-path test, tool-run restore fix (DB v4), v1.1.1 | 633 passed, 1 skipped (MOCK); REAL app test 5/5; exe --check OK |
 | 2026-10-13 | 15 | Working Light/Dark/System theme with live switching and persistence, WCAG AA contrast test, no hard-coded colors outside theme.py, Settings timeout range; v1.2.0 | 652 passed, 1 skipped (MOCK) |
+| 2026-10-13 | 16 | HTML preview fixed: real file URLs (CSS/JS/images work, offline), Open in browser uses the real file, live refresh, missing-image placeholders and missing-code reports, validator reference check; v1.2.1 | 663 passed, 1 skipped (MOCK); REAL 7B portfolio test passed; exe preview screenshot OK |
