@@ -202,6 +202,7 @@ stop at every phase boundary and wait for approval.
 - [x] Backup at `D:\coder slm-backup`; history rewritten with git filter-repo (paths replaced, old screenshots stripped); tags re-created
 - [x] Restored tool runs show "Checks passed"/"Checks failed" (schema v4 `messages.kind`, backfilled) + regression test
 - [x] Version 1.1.1; pytest, exe rebuild and `--check` verified
+- [—] 14b step 1: rewrite commit email to a GitHub noreply address — **won't do (owner decision 2026-10-13)**: keep the current email, no history rewrite
 
 ---
 
@@ -271,3 +272,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-13 | 14 | Pre-publish cleanup: personal paths removed from files and history (filter-repo, backup kept), neutral screenshots, personal-path test, tool-run restore fix (DB v4), v1.1.1 | 633 passed, 1 skipped (MOCK); REAL app test 5/5; exe --check OK |
 | 2026-10-13 | 15 | Working Light/Dark/System theme with live switching and persistence, WCAG AA contrast test, no hard-coded colors outside theme.py, Settings timeout range; v1.2.0 | 652 passed, 1 skipped (MOCK) |
 | 2026-10-13 | 16 | HTML preview fixed: real file URLs (CSS/JS/images work, offline), Open in browser uses the real file, live refresh, missing-image placeholders and missing-code reports, validator reference check; v1.2.1 | 663 passed, 1 skipped (MOCK); REAL 7B portfolio test passed; exe preview screenshot OK |
+| 2026-10-13 | 14b | Step 1 (commit email rewrite) closed as won't do (owner decision): current email kept, history not rewritten | — (docs only) |
