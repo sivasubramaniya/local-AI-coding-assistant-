@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui import theme
-from app.ui.icons import icon_size, load_icon
+from app.ui.icons import icon_size, load_icon, set_themed_icon, set_themed_pixmap, themed
 from app.ui.markdown_render import COPY_SCHEME, render_markdown
 
 RENDER_INTERVAL_MS = 60  # batch streamed tokens; re-render markdown at most ~16 times a second
@@ -137,7 +137,7 @@ class FileCard(QFrame):
         layout.setSpacing(16)
         icon_name = "globe" if file_type_label(path) == "HTML" else "file"
         icon = QLabel()
-        icon.setPixmap(load_icon(icon_name, theme.TEXT_PRIMARY, 22).pixmap(22, 22))
+        set_themed_pixmap(icon, icon_name, "text_primary", 22)
         icon.setStyleSheet("background: transparent;")
         layout.addWidget(icon)
         text_box = QVBoxLayout()
@@ -160,7 +160,7 @@ class FileCard(QFrame):
 def _action_button(icon: str, tooltip: str, parent: QWidget) -> QToolButton:
     button = QToolButton(parent)
     button.setObjectName("actionButton")
-    button.setIcon(load_icon(icon, theme.TEXT_SECONDARY, theme.ACTION_ICON_SIZE, hover_color=theme.TEXT_PRIMARY))
+    set_themed_icon(button, icon, "text_secondary", theme.ACTION_ICON_SIZE, "text_primary")
     button.setIconSize(icon_size(theme.ACTION_ICON_SIZE))
     button.setToolTip(tooltip)
     button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -200,6 +200,7 @@ class ActionRow(QWidget):
                        self.thumbs_button, self.more_button):
             layout.addWidget(button)
         layout.addStretch(1)
+        themed(self, lambda row: row._paint_thumbs(row.thumbs_button.isChecked()))
 
     def _on_thumbs(self, checked: bool) -> None:
         self._paint_thumbs(checked)
@@ -248,7 +249,7 @@ class AssistantMessage(QWidget):
         self.code_chip.setObjectName("codeChip")
         self.code_chip.setFixedSize(26, 26)
         self.code_chip.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.code_chip.setPixmap(load_icon("code", theme.TEXT_PRIMARY, 14).pixmap(14, 14))
+        set_themed_pixmap(self.code_chip, "code", "text_primary", 14)
         self.code_chip.setToolTip("Generated files")
         self.code_chip.hide()
         layout.addWidget(self.code_chip)
@@ -270,6 +271,7 @@ class AssistantMessage(QWidget):
         self._render_timer.setSingleShot(True)
         self._render_timer.setInterval(RENDER_INTERVAL_MS)
         self._render_timer.timeout.connect(self._render)
+        themed(self, lambda message: message.retheme())
 
     # --- content ---------------------------------------------------------
     def text(self) -> str:
@@ -328,6 +330,12 @@ class AssistantMessage(QWidget):
 
     def _render(self) -> None:
         self.browser.set_markdown(self._text)
+
+    def retheme(self) -> None:
+        """Re-render with the active theme's document CSS and code highlighting."""
+        self.browser.document().setDefaultStyleSheet(theme.message_document_css())
+        if self._text:
+            self.browser.set_markdown(self._text)
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         for card in self.file_cards:

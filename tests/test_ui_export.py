@@ -138,5 +138,8 @@ def test_settings_dialog_values(themed_app):
     dialog = SettingsDialog("C:/Exports", 45)
     assert dialog.values() == ("C:/Exports", 45)
     dialog.timeout_spin.setValue(5000)
-    assert dialog.values()[1] == 3600  # clamped to the allowed range
-    assert not dialog.theme_combo.model().item(1).isEnabled()
+    assert dialog.values()[1] == 600  # clamped to the allowed range (10-600 s)
+    dialog.timeout_spin.setValue(1)
+    assert dialog.values()[1] == 10
+    assert [dialog.theme_combo.itemText(i) for i in range(3)] == ["Dark", "Light", "System"]
+    assert all(dialog.theme_combo.model().item(i).isEnabled() for i in range(3))

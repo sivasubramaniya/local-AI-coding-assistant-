@@ -8,65 +8,124 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 # --- Color tokens (UI_DESIGN.md section 2) ---------------------------------
-BG_APP = "#000000"
-BG_SIDEBAR = "#000000"
-BORDER_SUBTLE = "#1F1F1F"
-BG_ITEM_HOVER = "#1A1A1A"
-BG_ITEM_SELECTED = "#262626"
-BG_CARD = "#171717"
-BORDER_CARD = "#333333"
-BG_INLINE_CODE = "#2A2A2A"
-BG_CODE_BLOCK = "#0D0D0D"
-TEXT_PRIMARY = "#ECECEC"
-TEXT_SECONDARY = "#9B9B9B"
-ACCENT_USER_BUBBLE = "#1E4A8C"
-ACCENT_PRIMARY = "#2F6FE0"
-SUCCESS = "#3FB950"
-ERROR = "#F85149"
-WARNING = "#D29922"
-PREVIEW_BG_START = "#1E2A5A"
-PREVIEW_BG_END = "#4B3A9A"
-
-# Derived shades (not in the spec table, kept here so nothing is hard-coded elsewhere)
-BG_BUTTON_ROUND = "#1F1F1F"
-BG_BUTTON_ROUND_HOVER = "#2E2E2E"
-BG_CODE_HEADER = "#171717"
-BG_ERROR_CARD = "#1C0F0F"
-ACCENT_PRIMARY_HOVER = "#4A82E8"
-ACCENT_DISABLED = "#22324F"
-CHIP_ON_BG = "#16243D"
-CHIP_ON_TEXT = "#8FB6FF"
-WHITE = "#FFFFFF"
-
-COLORS: dict[str, str] = {
-    "bg_app": BG_APP,
-    "bg_sidebar": BG_SIDEBAR,
-    "border_subtle": BORDER_SUBTLE,
-    "bg_item_hover": BG_ITEM_HOVER,
-    "bg_item_selected": BG_ITEM_SELECTED,
-    "bg_card": BG_CARD,
-    "border_card": BORDER_CARD,
-    "bg_inline_code": BG_INLINE_CODE,
-    "bg_code_block": BG_CODE_BLOCK,
-    "text_primary": TEXT_PRIMARY,
-    "text_secondary": TEXT_SECONDARY,
-    "accent_user_bubble": ACCENT_USER_BUBBLE,
-    "accent_primary": ACCENT_PRIMARY,
-    "success": SUCCESS,
-    "error": ERROR,
-    "warning": WARNING,
-    "preview_bg_start": PREVIEW_BG_START,
-    "preview_bg_end": PREVIEW_BG_END,
-    "bg_button_round": BG_BUTTON_ROUND,
-    "bg_button_round_hover": BG_BUTTON_ROUND_HOVER,
-    "bg_code_header": BG_CODE_HEADER,
-    "bg_error_card": BG_ERROR_CARD,
-    "accent_primary_hover": ACCENT_PRIMARY_HOVER,
-    "accent_disabled": ACCENT_DISABLED,
-    "chip_on_bg": CHIP_ON_BG,
-    "chip_on_text": CHIP_ON_TEXT,
-    "white": WHITE,
+# Two complete palettes with identical token names. DARK is the original design.
+# The active palette is copied into the module-level UPPERCASE names and COLORS by
+# set_palette(), so code that reads ``theme.TEXT_PRIMARY`` at call time follows the theme.
+DARK: dict[str, str] = {
+    "bg_app": "#000000",
+    "bg_sidebar": "#000000",
+    "border_subtle": "#1F1F1F",
+    "bg_item_hover": "#1A1A1A",
+    "bg_item_selected": "#262626",
+    "bg_card": "#171717",
+    "border_card": "#333333",
+    "border_hover": "#4A4A4A",
+    "bg_inline_code": "#2A2A2A",
+    "bg_code_block": "#0D0D0D",
+    "bg_code_header": "#171717",
+    "text_primary": "#ECECEC",
+    "text_secondary": "#9B9B9B",
+    "text_disabled": "#4A4A4A",
+    "accent_user_bubble": "#1E4A8C",
+    "user_bubble_text": "#FFFFFF",
+    "accent_primary": "#2F6FE0",
+    "accent_primary_hover": "#4A82E8",
+    "accent_disabled": "#22324F",
+    "on_accent": "#FFFFFF",
+    "success": "#3FB950",
+    "error": "#F85149",
+    "warning": "#D29922",
+    "bg_error_card": "#1C0F0F",
+    "bg_retry_hover": "#2A1414",
+    "preview_bg_start": "#1E2A5A",
+    "preview_bg_end": "#4B3A9A",
+    "bg_button_round": "#1F1F1F",
+    "bg_button_round_hover": "#2E2E2E",
+    "chip_on_bg": "#16243D",
+    "chip_on_text": "#8FB6FF",
+    "scrollbar": "#3A3A3A",
+    "scrollbar_hover": "#555555",
+    "gutter_bg": "#0D0D0D",
+    "gutter_text": "#8A8A8A",
+    "white": "#FFFFFF",
 }
+
+LIGHT: dict[str, str] = {
+    "bg_app": "#FFFFFF",
+    "bg_sidebar": "#F9F9F9",
+    "border_subtle": "#E5E5E5",
+    "bg_item_hover": "#EFEFEF",
+    "bg_item_selected": "#E3E3E3",
+    "bg_card": "#F4F4F4",
+    "border_card": "#D9D9D9",
+    "border_hover": "#B8B8B8",
+    "bg_inline_code": "#ECECEC",
+    "bg_code_block": "#F6F8FA",
+    "bg_code_header": "#EAEEF2",
+    "text_primary": "#1F1F1F",
+    "text_secondary": "#5F5F5F",
+    "text_disabled": "#A8A8A8",
+    "accent_user_bubble": "#DCE8FB",
+    "user_bubble_text": "#1F1F1F",
+    "accent_primary": "#2F6FE0",
+    "accent_primary_hover": "#2459B8",
+    "accent_disabled": "#B8CBF2",
+    "on_accent": "#FFFFFF",
+    "success": "#1A7F37",
+    "error": "#CF222E",
+    "warning": "#9A6700",
+    "bg_error_card": "#FFEBE9",
+    "bg_retry_hover": "#FFD8D3",
+    "preview_bg_start": "#EEF2FF",
+    "preview_bg_end": "#E9E3FF",
+    "bg_button_round": "#EDEDED",
+    "bg_button_round_hover": "#E0E0E0",
+    "chip_on_bg": "#DCE8FB",
+    "chip_on_text": "#1F4FB0",
+    "scrollbar": "#C8C8C8",
+    "scrollbar_hover": "#A8A8A8",
+    "gutter_bg": "#F6F8FA",
+    "gutter_text": "#57606A",
+    "white": "#FFFFFF",
+}
+
+PALETTES: dict[str, dict[str, str]] = {"dark": DARK, "light": LIGHT}
+CODE_STYLES: dict[str, str] = {"dark": "github-dark", "light": "default"}  # Pygments styles
+THEME_MODES = ("dark", "light", "system")
+DEFAULT_THEME_MODE = "dark"
+
+COLORS: dict[str, str] = dict(DARK)
+_active_palette = "dark"
+CODE_STYLE = CODE_STYLES["dark"]
+
+# Module-level names (set from the active palette by set_palette)
+BG_APP = BG_SIDEBAR = BORDER_SUBTLE = BG_ITEM_HOVER = BG_ITEM_SELECTED = BG_CARD = BORDER_CARD = ""
+BORDER_HOVER = BG_INLINE_CODE = BG_CODE_BLOCK = BG_CODE_HEADER = TEXT_PRIMARY = TEXT_SECONDARY = ""
+TEXT_DISABLED = ACCENT_USER_BUBBLE = USER_BUBBLE_TEXT = ACCENT_PRIMARY = ACCENT_PRIMARY_HOVER = ""
+ACCENT_DISABLED = ON_ACCENT = SUCCESS = ERROR = WARNING = BG_ERROR_CARD = BG_RETRY_HOVER = ""
+PREVIEW_BG_START = PREVIEW_BG_END = BG_BUTTON_ROUND = BG_BUTTON_ROUND_HOVER = CHIP_ON_BG = ""
+CHIP_ON_TEXT = SCROLLBAR = SCROLLBAR_HOVER = GUTTER_BG = GUTTER_TEXT = WHITE = ""
+
+
+def set_palette(name: str) -> None:
+    """Make ``name`` ("dark" or "light") the active palette for every later ``theme.X`` read."""
+    global _active_palette, CODE_STYLE
+    if name not in PALETTES:
+        raise ValueError(f"Unknown palette {name!r}; use one of {', '.join(PALETTES)}")
+    palette = PALETTES[name]
+    COLORS.clear()
+    COLORS.update(palette)
+    globals().update({key.upper(): value for key, value in palette.items()})
+    _active_palette = name
+    CODE_STYLE = CODE_STYLES[name]
+
+
+def active_palette() -> str:
+    return _active_palette
+
+
+set_palette("dark")
+
 
 # --- Typography (section 3) -------------------------------------------------
 UI_FONT_CANDIDATES = ("Segoe UI", "Arial")
@@ -77,7 +136,6 @@ FONT_SECTION_LABEL = 14
 FONT_MESSAGE = 16
 FONT_CODE = 14
 FONT_DISCLAIMER = 12
-CODE_STYLE = "github-dark"  # Pygments style for code blocks and the code viewer
 
 # --- Sizes (sections 1, 4-6) ------------------------------------------------
 SIDEBAR_WIDTH = 300
@@ -235,7 +293,7 @@ QToolButton::menu-indicator {{ image: none; width: 0px; }}
 QLabel#emptyTitle {{ font-size: 28px; font-weight: 600; color: {c['text_primary']}; }}
 QLabel#userBubble {{
     background: {c['accent_user_bubble']};
-    color: {c['white']};
+    color: {c['user_bubble_text']};
     border-radius: 22px;
     padding: 12px 20px;
     font-size: {FONT_MESSAGE}px;
@@ -256,7 +314,7 @@ QFrame#fileCard {{
     border: 1px solid {c['border_card']};
     border-radius: 14px;
 }}
-QFrame#fileCard:hover {{ border-color: #4A4A4A; }}
+QFrame#fileCard:hover {{ border-color: {c['border_hover']}; }}
 QLabel#fileName {{ font-weight: 600; font-size: {FONT_MESSAGE}px; background: transparent; }}
 QLabel#fileType {{ color: {c['text_secondary']}; font-size: {FONT_SECTION_LABEL}px; background: transparent; }}
 QToolButton#actionButton {{
@@ -279,7 +337,7 @@ QPushButton#retryButton {{
     border-radius: 14px;
     padding: 6px 16px;
 }}
-QPushButton#retryButton:hover {{ background: #2A1414; }}
+QPushButton#retryButton:hover {{ background: {c['bg_retry_hover']}; }}
 QFrame#agentCard {{
     background: {c['bg_card']};
     border: 1px solid {c['border_card']};
@@ -289,7 +347,7 @@ QLabel#agentTitle {{ font-weight: 600; font-size: {FONT_MESSAGE}px; background: 
 QLabel#agentText {{ color: {c['text_secondary']}; background: transparent; }}
 QPushButton#primaryButton {{
     background: {c['accent_primary']};
-    color: {c['white']};
+    color: {c['on_accent']};
     border: none;
     border-radius: 14px;
     padding: 6px 18px;
@@ -305,7 +363,7 @@ QPushButton#secondaryButton {{
     padding: 6px 16px;
 }}
 QPushButton#secondaryButton:hover {{ background: {c['bg_item_hover']}; }}
-QPushButton#secondaryButton:disabled {{ color: #4A4A4A; }}
+QPushButton#secondaryButton:disabled {{ color: {c['text_disabled']}; }}
 QPlainTextEdit#diffView {{
     background: {c['bg_code_block']};
     border: 1px solid {c['border_subtle']};
@@ -390,7 +448,7 @@ QPushButton#tabButton {{
 }}
 QPushButton#tabButton:hover {{ color: {c['text_primary']}; }}
 QPushButton#tabButton:checked {{ background: {c['bg_item_selected']}; color: {c['text_primary']}; }}
-QPushButton#tabButton:disabled {{ color: #4A4A4A; }}
+QPushButton#tabButton:disabled {{ color: {c['text_disabled']}; }}
 QTreeWidget#fileTree {{
     background: {c['bg_app']};
     border: none;
@@ -436,10 +494,10 @@ QPushButton#linkButton:hover {{ background: {c['bg_button_round_hover']}; }}
 QSplitter::handle {{ background: {c['border_subtle']}; }}
 QSplitter::handle:hover {{ background: {c['accent_primary']}; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
-QScrollBar::handle:vertical {{ background: #3A3A3A; border-radius: 3px; min-height: 32px; }}
-QScrollBar::handle:vertical:hover {{ background: #555555; }}
+QScrollBar::handle:vertical {{ background: {c['scrollbar']}; border-radius: 3px; min-height: 32px; }}
+QScrollBar::handle:vertical:hover {{ background: {c['scrollbar_hover']}; }}
 QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
-QScrollBar::handle:horizontal {{ background: #3A3A3A; border-radius: 3px; min-width: 32px; }}
+QScrollBar::handle:horizontal {{ background: {c['scrollbar']}; border-radius: 3px; min-width: 32px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0px; height: 0px; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 QMenu {{
@@ -465,7 +523,7 @@ QPushButton {{
     padding: 6px 16px;
 }}
 QPushButton:hover {{ background: {c['bg_button_round_hover']}; }}
-QPushButton#approveButton {{ background: {c['accent_primary']}; border-color: {c['accent_primary']}; color: {c['white']}; }}
+QPushButton#approveButton {{ background: {c['accent_primary']}; border-color: {c['accent_primary']}; color: {c['on_accent']}; }}
 QPushButton#rejectButton {{ border-color: {c['error']}; }}
 QLabel#dialogTitle {{ font-size: 18px; font-weight: 600; }}
 QLabel#dialogLabel {{ color: {c['text_secondary']}; font-size: {FONT_SECTION_LABEL}px; }}
@@ -486,10 +544,12 @@ QLineEdit {{
 """
 
 
-def apply_theme(app) -> tuple[str, str]:
-    """Apply Fusion style, a dark palette, fonts and the stylesheet to a QApplication."""
+def apply_theme(app, palette_name: str | None = None) -> tuple[str, str]:
+    """Apply Fusion style, the palette (dark by default), fonts and the stylesheet to a QApplication."""
     from PySide6.QtGui import QColor, QFont, QPalette
 
+    if palette_name is not None:
+        set_palette(palette_name)
     ui_font, code_font = resolve_fonts()
     app.setStyle("Fusion")
 
@@ -504,7 +564,7 @@ def apply_theme(app) -> tuple[str, str]:
         (role.Button, BG_BUTTON_ROUND),
         (role.ButtonText, TEXT_PRIMARY),
         (role.Highlight, ACCENT_USER_BUBBLE),
-        (role.HighlightedText, WHITE),
+        (role.HighlightedText, ON_ACCENT if _active_palette == "dark" else TEXT_PRIMARY),
         (role.ToolTipBase, BG_BUTTON_ROUND),
         (role.ToolTipText, TEXT_PRIMARY),
         (role.PlaceholderText, TEXT_SECONDARY),
@@ -518,3 +578,58 @@ def apply_theme(app) -> tuple[str, str]:
     app.setFont(font)
     app.setStyleSheet(build_stylesheet(ui_font, code_font))
     return ui_font, code_font
+
+
+# --- theme mode: Dark / Light / System ----------------------------------------------------
+_mode = DEFAULT_THEME_MODE
+_system_hooked = False
+
+
+def theme_mode() -> str:
+    return _mode
+
+
+def resolve_mode(mode: str, scheme=None) -> str:
+    """Palette name for a mode. "system" follows Windows (unknown -> dark)."""
+    if mode not in THEME_MODES:
+        mode = DEFAULT_THEME_MODE
+    if mode != "system":
+        return mode
+    if scheme is None:
+        scheme = _system_scheme()
+    from PySide6.QtCore import Qt
+
+    return "light" if scheme == Qt.ColorScheme.Light else "dark"
+
+
+def _system_scheme():
+    """Windows' current light/dark setting as a Qt.ColorScheme (Unknown when not available)."""
+    from PySide6.QtGui import QGuiApplication
+
+    app = QGuiApplication.instance()
+    return app.styleHints().colorScheme() if app is not None else None
+
+
+def apply_mode(app, mode: str) -> str:
+    """Switch the whole running app to ``mode`` now (no restart). Returns the palette used."""
+    global _mode, _system_hooked
+    _mode = mode if mode in THEME_MODES else DEFAULT_THEME_MODE
+    palette = resolve_mode(_mode)
+    apply_theme(app, palette)
+    from app.ui.icons import refresh_themed
+
+    refresh_themed()
+    if not _system_hooked:
+        app.styleHints().colorSchemeChanged.connect(_on_system_scheme_changed)
+        _system_hooked = True
+    return palette
+
+
+def _on_system_scheme_changed(_scheme=None) -> None:
+    if _mode != "system":
+        return
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is not None:
+        apply_mode(app, "system")

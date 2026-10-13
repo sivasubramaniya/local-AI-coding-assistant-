@@ -5,13 +5,17 @@ answer comes from a model on your own computer through [Ollama](https://ollama.c
 `qwen2.5-coder-14b:latest` by default, or the optional `qwen2.5-coder-7b:latest` when you pick
 **Fast mode** for a chat. No cloud APIs, no telemetry, no silent model switching.
 
-Version **1.1.1** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
+Version **1.2.0** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
 
 ![Chat with a highlighted code answer](docs/screenshots/03-answer.png)
 
 | Project mode: plan first | Generated files in the preview | Tests and repair loop |
 |---|---|---|
 | ![Plan card](docs/screenshots/05-plan-card.png) | ![Generated project](docs/screenshots/06-generated-preview.png) | ![Tests](docs/screenshots/07-tests.png) |
+
+| Light theme | Dark theme |
+|---|---|
+| ![Light theme](docs/screenshots/theme-light-chat.png) | ![Dark theme](docs/screenshots/theme-dark-chat.png) |
 
 Screenshots are captured by the REAL end-to-end test (`tests/test_integration_app.py`) with the local model.
 The design was inspired by modern chat-based developer tools.
@@ -23,6 +27,9 @@ The design was inspired by modern chat-based developer tools.
 - **Quality (14B) / Fast (7B)**: choose the model per chat in the composer (default for new chats in
   Settings). The choice is saved with the chat, every answer shows which model wrote it, and a missing
   model is reported with the exact `ollama create` command — the app never falls back to the other one.
+- **Light, Dark and System themes** (Settings → Theme). Switching applies instantly to the whole window —
+  messages, code highlighting, icons, preview — and is remembered. System follows the Windows setting live.
+  Both palettes pass a WCAG AA contrast test.
 - **Persistent history** in SQLite: chats, messages, feedback and projects survive restarts.
 - **Project mode**: the model plans the files first (Plan card); nothing is written until you click
   **Generate files**. Files appear as cards and in the preview panel (code view + offline HTML/Markdown preview).
@@ -143,7 +150,6 @@ Details: [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 - The packaged app is not code-signed (SmartScreen warning) and is ~322 MB because of QtWebEngine.
 - The pytest process can occasionally crash during Qt shutdown *after* all tests passed (results unaffected; not seen in the app).
 - Python projects run from the packaged app use the `python` on your PATH.
-- Light theme is a placeholder.
 
 Full list: [docs/TEST_REPORT.md](docs/TEST_REPORT.md).
 

@@ -93,11 +93,17 @@ def ask_storage_recovery(message: str, offer_fresh: bool, parent: QWidget | None
     return RECOVER_QUIT
 
 
+TIMEOUT_MIN_S = 10
+TIMEOUT_MAX_S = 600
+THEME_CHOICES = (("Dark", "dark"), ("Light", "light"), ("System", "system"))
+
+
 class SettingsDialog(QDialog):
     """Export folder, command timeout and a theme placeholder. Values are saved by the caller."""
 
     def __init__(self, export_dir: str, command_timeout_s: float, parent: QWidget | None = None,
-                 model_name: str = "", fast_default: bool = False, fast_model_name: str = "") -> None:
+                 model_name: str = "", fast_default: bool = False, fast_model_name: str = "",
+                 theme_mode: str = "dark") -> None:
         from PySide6.QtWidgets import QComboBox, QFileDialog, QFormLayout, QLineEdit, QSpinBox
 
         from app.__version__ import __version__
@@ -115,15 +121,17 @@ class SettingsDialog(QDialog):
         row = QHBoxLayout()
         self.export_edit = QLineEdit(export_dir)
         browse = QPushButton("Browse…")
-        browse.setObjectName("rejectButton")
+        browse.setObjectName("secondaryButton")
         browse.clicked.connect(lambda: self._browse(QFileDialog))
         row.addWidget(self.export_edit, 1)
         row.addWidget(browse)
         form.addRow("Export folder", row)
         self.timeout_spin = QSpinBox()
-        self.timeout_spin.setRange(1, 3600)
+        self.timeout_spin.setRange(TIMEOUT_MIN_S, TIMEOUT_MAX_S)  # typing outside the range is refused
         self.timeout_spin.setSuffix(" s")
-        self.timeout_spin.setValue(int(command_timeout_s))
+        self.timeout_spin.setSingleStep(10)
+        self.timeout_spin.setValue(max(TIMEOUT_MIN_S, min(TIMEOUT_MAX_S, int(command_timeout_s))))
+        self.timeout_spin.setToolTip(f"How long an approved command may run ({TIMEOUT_MIN_S}–{TIMEOUT_MAX_S} s).")
         form.addRow("Command timeout", self.timeout_spin)
         self.model_combo = QComboBox()
         self.model_combo.addItems(["Quality (14B) — default", "Fast (7B)"])
@@ -132,8 +140,10 @@ class SettingsDialog(QDialog):
                                     "each chat keeps its own choice.")
         form.addRow("New chats use", self.model_combo)
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Dark", "Light (coming later)"])
-        self.theme_combo.model().item(1).setEnabled(False)
+        self.theme_combo.addItems([label for label, _ in THEME_CHOICES])
+        modes = [mode for _, mode in THEME_CHOICES]
+        self.theme_combo.setCurrentIndex(modes.index(theme_mode) if theme_mode in modes else 0)
+        self.theme_combo.setToolTip("System follows the Windows light/dark setting.")
         form.addRow("Theme", self.theme_combo)
         layout.addLayout(form)
         about = f"About: Local AI Assistant {__version__}"
@@ -146,7 +156,7 @@ class SettingsDialog(QDialog):
         buttons = QHBoxLayout()
         buttons.addStretch(1)
         cancel = QPushButton("Cancel")
-        cancel.setObjectName("rejectButton")
+        cancel.setObjectName("secondaryButton")
         save = QPushButton("Save")
         save.setObjectName("approveButton")
         cancel.clicked.connect(self.reject)
@@ -169,6 +179,9 @@ class SettingsDialog(QDialog):
 
     def values(self) -> tuple[str, int]:
         return self.export_edit.text().strip(), self.timeout_spin.value()
+
+    def theme_mode(self) -> str:
+        return THEME_CHOICES[self.theme_combo.currentIndex()][1]
 
     def fast_default(self) -> bool:
         return self.model_combo.currentIndex() == 1

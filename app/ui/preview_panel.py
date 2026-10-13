@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from app.ui import theme
 from app.ui.code_view import CodeView
-from app.ui.icons import icon_size, load_icon
+from app.ui.icons import icon_size, load_icon, set_themed_icon, set_themed_pixmap, themed
 from app.ui.markdown_render import render_markdown
 
 logger = logging.getLogger(__name__)
@@ -117,7 +117,7 @@ class HtmlPreview(QWidget):
 def _round_button(icon: str, tooltip: str) -> QToolButton:
     button = QToolButton()
     button.setObjectName("roundButton")
-    button.setIcon(load_icon(icon, theme.TEXT_PRIMARY, 18))
+    set_themed_icon(button, icon, "text_primary", 18)
     button.setIconSize(icon_size(18))
     button.setFixedSize(QSize(theme.ROUND_BUTTON_SIZE, theme.ROUND_BUTTON_SIZE))
     button.setToolTip(tooltip)
@@ -155,7 +155,7 @@ class PreviewPanel(QFrame):
         header_row.setSpacing(8)
         self.file_button = QToolButton()
         self.file_button.setObjectName("fileDropdown")
-        self.file_button.setIcon(load_icon("code", theme.TEXT_PRIMARY, 18))
+        set_themed_icon(self.file_button, "code", "text_primary", 18)
         self.file_button.setIconSize(icon_size(18))
         self.file_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.file_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -229,6 +229,19 @@ class PreviewPanel(QFrame):
             self.stack.addWidget(page)
         layout.addWidget(self.stack, 1)
         self.show_empty()
+        themed(self, lambda panel: panel.retheme())
+
+    def retheme(self) -> None:
+        """Apply the active theme: document CSS, tree icons, code colors and the open file."""
+        self.markdown_view.document().setDefaultStyleSheet(theme.message_document_css())
+        root = self.tree.topLevelItem(0)
+        if root is not None:
+            root.setIcon(0, load_icon("folder", theme.TEXT_SECONDARY, 16))
+            for i in range(root.childCount()):
+                root.child(i).setIcon(0, load_icon("file", theme.TEXT_SECONDARY, 16))
+        self.code_view.retheme()
+        if self._current is not None:
+            self.show_tab(self.current_tab() if self.current_tab() in ("code", "preview") else "code")
 
     # --- project/files -------------------------------------------------------
     @property

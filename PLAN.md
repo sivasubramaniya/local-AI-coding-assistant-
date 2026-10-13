@@ -205,6 +205,18 @@ stop at every phase boundary and wait for approval.
 
 ---
 
+## Phase 15 — Working Theme Switching  `[x]`
+
+- [x] DARK (unchanged) and LIGHT palettes with identical tokens; every hard-coded color moved into `theme.py`
+- [x] Dark / Light / System (follows Windows via `styleHints().colorScheme()` + `colorSchemeChanged`); default Dark
+- [x] Live switching without restart: stylesheet, icons (themed registry), messages + code highlighting, code viewer, tree, status card, dialogs, preview
+- [x] Choice saved in `app_settings` and restored before the window shows
+- [x] Settings: command timeout 10–600 s; neutral Browse/Cancel buttons
+- [x] Tests: tokens, hex, WCAG AA contrast, live switch, System signal, persistence, no hex outside theme.py
+- [x] Screenshots `docs/screenshots/theme-{light,dark}-*.png` reviewed (2 fix rounds)
+
+---
+
 ## Final Deliverables Checklist
 
 - [x] Native Windows desktop app (PySide6)
@@ -245,3 +257,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-12 | 12 | Polish and release 1.0.0: performance trials (nothing kept), REAL end-to-end app test + 6 fixes, build 567 → 322 MB, gitignore/secret scan, version 1.0.0, README/CHANGELOG/LICENSE | 611 passed, 1 skipped (MOCK); 9 integration passed (REAL); exe --check OK |
 | 2026-10-13 | 13 | Fast mode: optional user-selected `qwen2.5-coder-7b:latest` per chat (no fallback), DB v3, both-model health and --check, plan-card note, parser fix found by the REAL 7B run; v1.1.0 | 628 passed, 1 skipped (MOCK); 11 integration passed incl. 1 re-run after a sleep-related Ollama timeout (REAL); 7B 6.40 vs 14B 3.19 tok/s |
 | 2026-10-13 | 14 | Pre-publish cleanup: personal paths removed from files and history (filter-repo, backup kept), neutral screenshots, personal-path test, tool-run restore fix (DB v4), v1.1.1 | 633 passed, 1 skipped (MOCK); REAL app test 5/5; exe --check OK |
+| 2026-10-13 | 15 | Working Light/Dark/System theme with live switching and persistence, WCAG AA contrast test, no hard-coded colors outside theme.py, Settings timeout range; v1.2.0 | 652 passed, 1 skipped (MOCK) |

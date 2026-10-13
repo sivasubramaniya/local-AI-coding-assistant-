@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui import theme
-from app.ui.icons import icon_size, load_icon
+from app.ui.icons import icon_size, load_icon, set_themed_icon, set_themed_pixmap, themed
 
 DISCLAIMER = "Local model output can contain mistakes. Review code before running."
 PLACEHOLDER = "Ask a coding question…"
@@ -112,7 +112,7 @@ class Composer(QWidget):
 
         self.attach_button = QToolButton()
         self.attach_button.setObjectName("iconButton")
-        self.attach_button.setIcon(load_icon("plus", theme.TEXT_PRIMARY, 22))
+        set_themed_icon(self.attach_button, "plus", "text_primary", 22)
         self.attach_button.setIconSize(icon_size(22))
         self.attach_button.setFixedSize(QSize(40, 40))
         self.attach_button.setToolTip("Attach files from disk")
@@ -125,7 +125,6 @@ class Composer(QWidget):
         self.project_chip = QPushButton(" Project mode")
         self.project_chip.setObjectName("projectChip")
         self.project_chip.setCheckable(True)
-        self.project_chip.setIcon(load_icon("project-mode", theme.TEXT_SECONDARY, 18))
         self.project_chip.setIconSize(icon_size(18))
         self.project_chip.setCursor(Qt.CursorShape.PointingHandCursor)
         self.project_chip.setToolTip("When on, the request goes to the project generator")
@@ -156,7 +155,7 @@ class Composer(QWidget):
         outer.addWidget(self.attachment_label)
         outer.addWidget(self.disclaimer)
         outer.addWidget(self.pill)
-        self._refresh_send_button()
+        themed(self, lambda composer: composer.retheme())
 
     # --- state -------------------------------------------------------------
     def is_busy(self) -> bool:
@@ -219,14 +218,18 @@ class Composer(QWidget):
         else:
             self.submit()
 
+    def retheme(self) -> None:
+        self._on_project_toggled(self.project_chip.isChecked())
+        self._refresh_send_button()
+
     def _on_project_toggled(self, checked: bool) -> None:
         color = theme.CHIP_ON_TEXT if checked else theme.TEXT_SECONDARY
         self.project_chip.setIcon(load_icon("project-mode", color, 18))
 
     def _refresh_send_button(self) -> None:
         if self._busy:
-            self.send_button.setIcon(load_icon("stop-square", theme.WHITE, 20))
+            self.send_button.setIcon(load_icon("stop-square", theme.ON_ACCENT, 20))
             self.send_button.setToolTip("Stop generating")
         else:
-            self.send_button.setIcon(load_icon("send-arrow", theme.WHITE, 20))
+            self.send_button.setIcon(load_icon("send-arrow", theme.ON_ACCENT, 20))
             self.send_button.setToolTip("Send (Enter)")

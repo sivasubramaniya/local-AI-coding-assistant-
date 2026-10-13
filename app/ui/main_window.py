@@ -74,7 +74,7 @@ from app.ui.agent_widgets import ChangesCard, ExportCard, PlanCard
 from app.ui.dialogs import CommandApprovalDialog, SettingsDialog
 from app.ui.chat_view import ChatView
 from app.ui.composer import Composer
-from app.ui.icons import icon_size, load_icon
+from app.ui.icons import icon_size, load_icon, set_themed_icon, set_themed_pixmap, themed
 from app.ui.message_widgets import AssistantMessage, ErrorCard
 from app.ui.preview_panel import PreviewPanel
 from app.ui.sidebar import Sidebar
@@ -97,7 +97,8 @@ logger = logging.getLogger(__name__)
 NO_PROJECT_TO_EXPORT = "This chat has no project to export yet."
 EXPORT_DIR_SETTING = "export_dir"
 COMMAND_TIMEOUT_SETTING = "command_timeout_s"
-DEFAULT_MODEL_MODE_SETTING = "default_model_mode"  # "quality" (14B, default) or "fast" (7B)
+DEFAULT_MODEL_MODE_SETTING = "default_model_mode"
+THEME_SETTING = "theme"  # "dark" (default), "light" or "system"  # "quality" (14B, default) or "fast" (7B)
 TOAST_MS = 2600
 PREVIEW_SHARE = 0.45
 STATUS_LOADING = "Loading model…"
@@ -128,7 +129,7 @@ PREVIEW_MAX_CHARS = 2_000_000
 def _top_bar_button(icon: str, tooltip: str, text: str = "") -> QToolButton:
     button = QToolButton()
     button.setObjectName("topBarButton")
-    button.setIcon(load_icon(icon, theme.TEXT_PRIMARY, 20))
+    set_themed_icon(button, icon, "text_primary", 20)
     button.setIconSize(icon_size(20))
     button.setToolTip(tooltip)
     button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -154,6 +155,7 @@ def finished_status(model_name: str, stats: StreamStats | None) -> str:
 
 class MainWindow(QMainWindow):
     streamFinished = Signal()
+    themeApplied = Signal(str)  # the palette now in use ("dark" or "light")
     exportFinished = Signal(object)  # ExportResult or AppError
     healthChecked = Signal(object)  # HealthResult
 
@@ -1403,14 +1405,19 @@ class MainWindow(QMainWindow):
                 logger.warning("Ignoring a bad saved command timeout: %r", raw)
         try:
             self._fast_default = self.store.get_setting(DEFAULT_MODEL_MODE_SETTING) == "fast"
+            saved_theme = self.store.get_setting(THEME_SETTING)
         except AppError:
             self._fast_default = False
+            saved_theme = None
+        if saved_theme in theme.THEME_MODES and saved_theme != theme.theme_mode():
+            self.apply_theme_mode(saved_theme)  # before the window is shown
 
     def _edit_settings(self, export_dir: str, timeout_s: float) -> tuple | None:
         dialog = SettingsDialog(export_dir, timeout_s, self, model_name=self.config.model_name,
-                                fast_default=self._fast_default, fast_model_name=self.config.fast_model_name)
+                                fast_default=self._fast_default, fast_model_name=self.config.fast_model_name,
+                                theme_mode=theme.theme_mode())
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
-            return (*dialog.values(), dialog.fast_default())
+            return (*dialog.values(), dialog.fast_default(), dialog.theme_mode())
         return None
 
     def open_settings(self) -> None:
@@ -1419,17 +1426,30 @@ class MainWindow(QMainWindow):
             return
         export_dir, timeout_s = values[0], values[1]
         fast_default = bool(values[2]) if len(values) > 2 else self._fast_default
+        theme_mode = values[3] if len(values) > 3 and values[3] in theme.THEME_MODES else theme.theme_mode()
         try:
             if export_dir:
                 self.store.set_setting(EXPORT_DIR_SETTING, export_dir)
             self.store.set_setting(COMMAND_TIMEOUT_SETTING, str(int(timeout_s)))
             self.store.set_setting(DEFAULT_MODEL_MODE_SETTING, "fast" if fast_default else "quality")
+            self.store.set_setting(THEME_SETTING, theme_mode)
         except AppError as exc:
             self._storage_failed(exc)
             return
         self.config = replace(self.config, command_timeout_s=float(timeout_s))
         self._fast_default = fast_default
+        if theme_mode != theme.theme_mode():
+            self.apply_theme_mode(theme_mode)
         self.show_toast("Settings saved.")
+
+    def apply_theme_mode(self, mode: str) -> str:
+        """Switch the whole running app (stylesheet, icons, messages, code, preview) to ``mode``."""
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        palette = theme.apply_mode(app, mode) if app is not None else theme.resolve_mode(mode)
+        self.themeApplied.emit(palette)
+        return palette
 
     # --- lifecycle -------------------------------------------------------------
     def closeEvent(self, event) -> None:  # noqa: N802

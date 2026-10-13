@@ -24,7 +24,7 @@ not any third-party product branding or logos.
 
 ---
 
-## 2. Color Tokens (dark theme)
+## 2. Color Tokens (Dark theme; a Light palette with the same tokens lives in `app/ui/theme.py`)
 
 | Token | Hex | Use |
 |---|---|---|

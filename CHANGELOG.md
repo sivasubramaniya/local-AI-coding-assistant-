@@ -2,6 +2,24 @@
 
 All notable changes to Local AI Assistant. Summarised from the `PLAN.md` changelog; dates are 2026.
 
+## [1.2.0] — 2026-10-13
+
+### Added
+- **Working Light, Dark and System themes** (Settings → Theme). Two complete palettes with identical
+  tokens (Dark unchanged); System follows Windows via Qt's color scheme and reacts to changes live.
+- Switching applies immediately without a restart: stylesheet, all icons, already-rendered messages and
+  code blocks (Pygments `default` in Light, `github-dark` in Dark), the code viewer, file tree, status card,
+  dialogs and the preview panel. The choice is saved and restored before the window shows.
+- Tests: identical tokens and valid hex in both palettes, a WCAG AA contrast check (text 4.5:1, UI parts 3:1),
+  live Dark → Light → Dark switching, System mode with Qt's change signal, persistence, and a scan that fails
+  on hex colors in `app/ui/` outside `theme.py`.
+- `scripts/theme_screenshots.py` and `docs/screenshots/theme-{light,dark}-*.png`.
+
+### Fixed
+- Code-view line numbers did not meet AA contrast (found by the new test).
+- Settings: "Browse…" and "Cancel" used the red reject style; the command timeout is limited to 10–600 s.
+- README.md had been made binary by a UTF-16 line appended in PowerShell; restored as UTF-8.
+
 ## [1.1.1] — 2026-10-13
 
 Pre-publish cleanup.

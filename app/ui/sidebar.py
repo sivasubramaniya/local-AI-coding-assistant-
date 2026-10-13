@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from app.backend.status import ConnectionState
 from app.ui import theme
-from app.ui.icons import icon_size, load_icon
+from app.ui.icons import icon_size, load_icon, set_themed_icon, set_themed_pixmap, themed
 
 ID_ROLE = Qt.ItemDataRole.UserRole + 1
 NAV_ICON_GAP = "  "
@@ -76,7 +76,7 @@ def _nav_button(icon: str, text: str) -> QToolButton:
     button = QToolButton()
     button.setObjectName("navButton")
     button.setText(NAV_ICON_GAP + text)  # QSS cannot set the icon-to-text gap
-    button.setIcon(load_icon(icon, theme.TEXT_PRIMARY, 20))
+    set_themed_icon(button, icon, "text_primary", 20)
     button.setIconSize(icon_size(20))
     button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
     button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -89,7 +89,7 @@ def _nav_button(icon: str, text: str) -> QToolButton:
 def _icon_button(icon: str, tooltip: str, size: int = 20) -> QToolButton:
     button = QToolButton()
     button.setObjectName("iconButton")
-    button.setIcon(load_icon(icon, theme.TEXT_SECONDARY, size, hover_color=theme.TEXT_PRIMARY))
+    set_themed_icon(button, icon, "text_secondary", size, "text_primary")
     button.setIconSize(icon_size(size))
     button.setFixedSize(QSize(36, 36))
     button.setToolTip(tooltip)
@@ -112,7 +112,7 @@ class ModelStatusCard(QFrame):
         self.badge.setObjectName("modelBadge")
         self.badge.setFixedSize(32, 32)
         self.badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.badge.setPixmap(load_icon("code", theme.TEXT_PRIMARY, 16).pixmap(16, 16))
+        set_themed_pixmap(self.badge, "code", "text_primary", 16)
         layout.addWidget(self.badge)
 
         self.text_box = QWidget()
@@ -141,6 +141,7 @@ class ModelStatusCard(QFrame):
 
     def set_state(self, state: ConnectionState, detail: str | None = None) -> None:
         self.state = state
+        self._detail = detail
         color = {
             ConnectionState.CONNECTED: theme.SUCCESS,
             ConnectionState.DISCONNECTED: theme.ERROR,
@@ -256,12 +257,13 @@ class Sidebar(QFrame):
         self.settings_button = QPushButton(NAV_ICON_GAP + "Settings")
         self.settings_button.setObjectName("settingsButton")
         self.settings_button.setFixedHeight(SETTINGS_BUTTON_HEIGHT)
-        self.settings_button.setIcon(load_icon("settings", theme.TEXT_PRIMARY, 18))
+        set_themed_icon(self.settings_button, "settings", "text_primary", 18)
         self.settings_button.setIconSize(icon_size(18))
         self.settings_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.settings_button.clicked.connect(self.settingsRequested.emit)
         layout.addSpacing(6)
         layout.addWidget(self.settings_button)
+        themed(self, lambda sidebar: sidebar.retheme())
 
     def _make_list(self, name: str, model) -> QListView:
         view = QListView()
@@ -292,6 +294,16 @@ class Sidebar(QFrame):
         self.project_list.setFixedHeight(len(names) * theme.NAV_ROW_HEIGHT + 2)
         self.projects_label.setVisible(bool(names) and not self._collapsed)
         self.project_list.setVisible(bool(names) and not self._collapsed)
+
+    def retheme(self) -> None:
+        """Re-color list icons and the status dot for the active theme."""
+        for row in range(self.project_model.rowCount()):
+            item = self.project_model.item(row)
+            item.setData(load_icon("folder", theme.TEXT_PRIMARY, 20), Qt.ItemDataRole.DecorationRole)
+        card = self.status_card
+        card.set_state(card.state, getattr(card, "_detail", None))
+        for view in (self.chat_list, self.project_list):
+            view.viewport().update()
 
     def set_chats(self, chats: list[tuple[str, str]], current_id: str | None = None) -> None:
         """``chats`` is a list of (id, title), most recent first."""

@@ -12,8 +12,6 @@ from pygments.util import ClassNotFound
 
 from app.ui import theme
 
-GUTTER_BG = theme.BG_CODE_BLOCK
-GUTTER_TEXT = "#5A5A5A"
 
 
 class _LineNumberArea(QWidget):
@@ -64,6 +62,14 @@ class CodeView(QPlainTextEdit):
         self.setPlainText(text)
         self._highlight(text, filename)
         self.moveCursor(QTextCursor.MoveOperation.Start)
+
+    def retheme(self) -> None:
+        """Re-highlight the current file with the active theme's Pygments style."""
+        if self.toPlainText():
+            scroll = self.verticalScrollBar().value()
+            self.set_code(self.toPlainText(), self._filename)
+            self.verticalScrollBar().setValue(scroll)
+        self._gutter.update()
 
     def _highlight(self, text: str, filename: str) -> None:
         try:
@@ -129,8 +135,8 @@ class CodeView(QPlainTextEdit):
 
     def paint_line_numbers(self, event) -> None:
         painter = QPainter(self._gutter)
-        painter.fillRect(event.rect(), QColor(GUTTER_BG))
-        painter.setPen(QColor(GUTTER_TEXT))
+        painter.fillRect(event.rect(), QColor(theme.GUTTER_BG))
+        painter.setPen(QColor(theme.GUTTER_TEXT))
         painter.setFont(self.font())
         block = self.firstVisibleBlock()
         number = block.blockNumber()
