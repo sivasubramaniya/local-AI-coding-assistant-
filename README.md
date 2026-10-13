@@ -14,6 +14,7 @@ Version **1.1.1** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
 | ![Plan card](docs/screenshots/05-plan-card.png) | ![Generated project](docs/screenshots/06-generated-preview.png) | ![Tests](docs/screenshots/07-tests.png) |
 
 Screenshots are captured by the REAL end-to-end test (`tests/test_integration_app.py`) with the local model.
+The design was inspired by modern chat-based developer tools.
 
 ## Features
 

@@ -1,7 +1,7 @@
 # UI_DESIGN.md — Local AI Assistant Desktop UI Specification
 
-Reference screenshots: `docs/ui-reference/ref-1.png` … `ref-4.png`.
-The app must match this **layout, dark theme, spacing and interaction model**, built
+The design was inspired by modern chat-based developer tools. App screenshots: `docs/screenshots/`.
+The app follows this **layout, dark theme, spacing and interaction model**, built
 natively with **PySide6 Qt Widgets** (no browser UI). Use the app's own name and icons,
 not any third-party product branding or logos.
 
@@ -17,8 +17,8 @@ not any third-party product branding or logos.
 └──────────────┴───────────────────────────────┴──────────────────────────┘
 ```
 
-- Use a `QSplitter` between the chat area and the preview panel so the user can drag the divider (ref-1 vs ref-3).
-- When the preview panel is closed, the chat area expands and its content stays centered (ref-4).
+- Use a `QSplitter` between the chat area and the preview panel so the user can drag the divider.
+- When the preview panel is closed, the chat area expands and its content stays centered.
 - The sidebar collapses to a thin icon rail via the collapse button.
 - Minimum window size: 1100 × 700. Default: maximized.
 
@@ -78,7 +78,7 @@ Top to bottom:
 ## 5. Chat Area (center)
 
 ### Top bar (right-aligned, 56px high)
-- **Export** button (icon + label), the equivalent of "Share" in the reference.
+- **Export** button (icon + label).
 - A file-tree toggle icon (opens or closes the preview panel).
 - An overflow `⋯` menu: Rename chat, Export ZIP, Delete chat.
 
