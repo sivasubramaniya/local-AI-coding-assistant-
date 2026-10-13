@@ -13,6 +13,7 @@ server). **REAL** = the real local model and/or real compilers and processes.
 |---|---|---|---|
 | Unit + GUI (offscreen) | `python -m pytest -v` | **628 passed, 1 skipped**, 11 deselected (integration) | MOCK model; real SQLite, files, subprocesses (python, javac, java) |
 | Same, network blocked | `python -m pytest --offline-guard` | **601 passed, 1 skipped** | MOCK model, loopback sockets only |
+| Manual offline check (owner, 2026-10-13) | packaged exe 1.2.1 with Wi-Fi off | chat, project generation, preview and ZIP export **all worked** | REAL model, REAL app, run by the owner |
 | Integration | `python -m pytest -m integration -v` | **11 passed** (10 in the full run + 1 re-run after a sleep-related Ollama timeout) | REAL models (14B + 7B) |
 | Coverage | `python -m pytest --cov=app --cov=main` | **88%** of app code | — |
 | Compile | `python -m compileall -q app main.py scripts` | exit 0 | — |
@@ -132,10 +133,10 @@ before the block" (the format the system prompt asks for) are recognised.
    frame). Joining worker threads at exit (`shutdown_workers`) removed it from normal runs (5/5 clean);
    guarded runs were clean 4 times out of 6 afterwards. Not seen in the app or the packaged exe.
    Treat a guarded run as passed only when the summary line shows no failures.
-3. **Phase 10 manual check pending**: the Wi-Fi-off checklist in `docs/OFFLINE.md` must be run by the owner
-   (Claude Code itself needs the internet).
-4. **Manual UI prompt with the real model** in the windowed app (not just `--check` and tests) is still to
-   be tried by the owner.
+3. ~~Phase 10 manual check pending~~ — **done** 2026-10-13: the owner ran the packaged exe with Wi-Fi off;
+   chat, project generation, preview and ZIP export all worked.
+4. ~~Manual UI prompt with the real model~~ — **done** as part of the owner's offline run above (chat in the
+   windowed packaged app with the real model).
 5. `main.py` and `app/ui/workers.py` show low coverage because they run in subprocesses / QThreads, which
    coverage does not trace; both are exercised by tests.
 6. The packaged app is ~322 MB (QtWebEngine; it was 567 MB before the Phase 12 size reduction) and not code-signed (SmartScreen warning; see `docs/INSTALL.md`).

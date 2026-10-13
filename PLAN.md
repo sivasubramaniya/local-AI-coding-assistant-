@@ -143,11 +143,11 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 10 — Offline Verification  `[~]`
+## Phase 10 — Offline Verification  `[x]`
 
-> Automated part done. The Wi-Fi-off manual checklist in `docs/OFFLINE.md` must be run by the owner.
+> Automated part done; manual Wi-Fi-off check run by the owner on 2026-10-13 with the packaged exe 1.2.1.
 
-- [~] Disconnect the network and test chat, generation, storage and export (automated with a socket guard; manual run pending)
+- [x] Disconnect the network and test chat, generation, storage and export (automated with a socket guard; owner's manual Wi-Fi-off run with the packaged exe: chat, project generation, preview and ZIP export all worked)
 - [x] Confirm no cloud APIs are called (code audit documented; whole suite passes with `--offline-guard`)
 - [x] Test missing-model and missing-dependency scenarios
 - [x] Document required local tools (`docs/OFFLINE.md`)
@@ -243,7 +243,7 @@ stop at every phase boundary and wait for approval.
 - [x] SQLite storage
 - [x] Desktop export and ZIP
 - [x] README and run instructions
-- [~] Offline verification report (automated part done; manual Wi-Fi-off checklist pending)
+- [x] Offline verification report (automated + owner's manual Wi-Fi-off run, 2026-10-13)
 - [x] PyInstaller build
 - [x] Installation and troubleshooting guide
 - [x] Final test report and known limitations
@@ -273,3 +273,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-13 | 15 | Working Light/Dark/System theme with live switching and persistence, WCAG AA contrast test, no hard-coded colors outside theme.py, Settings timeout range; v1.2.0 | 652 passed, 1 skipped (MOCK) |
 | 2026-10-13 | 16 | HTML preview fixed: real file URLs (CSS/JS/images work, offline), Open in browser uses the real file, live refresh, missing-image placeholders and missing-code reports, validator reference check; v1.2.1 | 663 passed, 1 skipped (MOCK); REAL 7B portfolio test passed; exe preview screenshot OK |
 | 2026-10-13 | 14b | Step 1 (commit email rewrite) closed as won't do (owner decision): current email kept, history not rewritten | — (docs only) |
+| 2026-10-13 | 10 | Manual Wi-Fi-off check by the owner with the packaged exe 1.2.1: chat, project generation, preview and ZIP export worked; Phase 10 closed | REAL (owner, manual) |
