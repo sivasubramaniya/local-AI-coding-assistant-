@@ -58,6 +58,20 @@ def test_screenshot_mode_saves_image_and_exits_zero(tmp_path):
     assert shot.is_file() and shot.stat().st_size > 10_000
 
 
+@pytest.mark.gui
+def test_screenshot_with_glass_theme(tmp_path):
+    shot = tmp_path / "glass.png"
+    result = _run(tmp_path, "--screenshot", str(shot), "--theme", "glass", "--delay", "100",
+                  QT_QPA_PLATFORM="offscreen", LAA_OLLAMA_URL=UNUSED_LOCAL_URL)
+    assert result.returncode == 0, result.stderr
+    assert shot.is_file() and shot.stat().st_size > 10_000
+
+
+def test_unknown_theme_option_is_rejected(tmp_path):
+    result = _run(tmp_path, "--theme", "neon", "--check")
+    assert result.returncode == 2 and "--theme" in result.stderr
+
+
 def test_bad_config_exits_two_without_traceback(tmp_path):
     result = _run(tmp_path, "--check", LAA_LOG_LEVEL="WRONG")
     assert result.returncode == 2

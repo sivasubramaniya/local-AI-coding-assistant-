@@ -322,6 +322,13 @@ class PreviewPanel(QFrame):
         index = self.stack.currentIndex()
         return {self.PAGE_EMPTY: "empty", self.PAGE_CODE: "code"}.get(index, "preview")
 
+    def refresh_theme(self) -> None:
+        """Re-render the Markdown preview with the active theme's colors."""
+        self.markdown_view.document().setDefaultStyleSheet(theme.message_document_css())
+        if self.stack.currentIndex() == self.PAGE_MARKDOWN:
+            self.show_tab("preview")
+        self.code_view.viewport().update()
+
     # --- tree ----------------------------------------------------------------
     def set_tree_visible(self, visible: bool) -> None:
         self.tree.setVisible(visible)

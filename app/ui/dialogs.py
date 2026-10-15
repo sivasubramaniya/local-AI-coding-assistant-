@@ -5,6 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from app.ui.theme import DEFAULT_THEME, THEMES, normalize_theme
+
 
 class CommandApprovalDialog(QDialog):
     """Modal dark dialog showing a command and its working directory. Approve or Reject."""
@@ -94,10 +96,11 @@ def ask_storage_recovery(message: str, offer_fresh: bool, parent: QWidget | None
 
 
 class SettingsDialog(QDialog):
-    """Export folder, command timeout and a theme placeholder. Values are saved by the caller."""
+    """Export folder, command timeout, default model and theme. Values are saved by the caller."""
 
     def __init__(self, export_dir: str, command_timeout_s: float, parent: QWidget | None = None,
-                 model_name: str = "", fast_default: bool = False, fast_model_name: str = "") -> None:
+                 model_name: str = "", fast_default: bool = False, fast_model_name: str = "",
+                 theme_name: str = DEFAULT_THEME) -> None:
         from PySide6.QtWidgets import QComboBox, QFileDialog, QFormLayout, QLineEdit, QSpinBox
 
         from app.__version__ import __version__
@@ -132,8 +135,9 @@ class SettingsDialog(QDialog):
                                     "each chat keeps its own choice.")
         form.addRow("New chats use", self.model_combo)
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Dark", "Light (coming later)"])
-        self.theme_combo.model().item(1).setEnabled(False)
+        for name, label in THEMES.items():
+            self.theme_combo.addItem(label, name)
+        self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(normalize_theme(theme_name))))
         form.addRow("Theme", self.theme_combo)
         layout.addLayout(form)
         about = f"About: Local AI Assistant {__version__}"
@@ -172,3 +176,6 @@ class SettingsDialog(QDialog):
 
     def fast_default(self) -> bool:
         return self.model_combo.currentIndex() == 1
+
+    def theme_name(self) -> str:
+        return normalize_theme(self.theme_combo.currentData())

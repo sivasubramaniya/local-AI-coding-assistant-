@@ -12,6 +12,7 @@ from pygments.util import ClassNotFound
 
 from app.ui import theme
 
+# Dark values; painting reads theme.code_colors() so the gutter follows the active theme.
 GUTTER_BG = theme.BG_CODE_BLOCK
 GUTTER_TEXT = "#5A5A5A"
 
@@ -128,9 +129,10 @@ class CodeView(QPlainTextEdit):
         self._gutter.setGeometry(QRect(cr.left(), cr.top(), self.line_number_width(), cr.height()))
 
     def paint_line_numbers(self, event) -> None:
+        colors = theme.code_colors()
         painter = QPainter(self._gutter)
-        painter.fillRect(event.rect(), QColor(GUTTER_BG))
-        painter.setPen(QColor(GUTTER_TEXT))
+        painter.fillRect(event.rect(), QColor(colors["gutter_bg"]))
+        painter.setPen(QColor(colors["gutter_text"]))
         painter.setFont(self.font())
         block = self.firstVisibleBlock()
         number = block.blockNumber()

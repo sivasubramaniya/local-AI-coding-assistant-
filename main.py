@@ -6,6 +6,7 @@ Usage:
     python main.py --demo                start with canned demo answers (no model needed)
     python main.py --screenshot PATH     run a scripted demo, save a window capture, exit
         [--delay MS] [--no-preview]
+    python main.py --theme dark|glass    use this theme for this run (also for --screenshot)
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from app.config import AppConfig, ensure_directories, load_config
 from app.errors import AppError, ConfigError
 from app.logging_setup import setup_logging
 from app.prompts import load_system_prompt
+from app.ui.theme import DEFAULT_THEME, THEMES
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -127,7 +129,7 @@ def attach_parent_console() -> bool:
     return True
 
 
-def create_app(argv: list[str] | None = None):
+def create_app(argv: list[str] | None = None, theme_name: str = DEFAULT_THEME):
     """Create the QApplication with the theme applied."""
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
@@ -142,7 +144,7 @@ def create_app(argv: list[str] | None = None):
     app.setApplicationName("Local AI Assistant")
     app.setApplicationVersion(__version__)
     app.setOrganizationName("LocalAIAssistant")
-    apply_theme(app)
+    apply_theme(app, theme_name)
     return app
 
 
@@ -174,17 +176,19 @@ def open_history_store(config: AppConfig, choose: Callable[[str, bool], str]):
     return InMemoryChatStore() if choice == "memory" else None
 
 
-def run_gui(config: AppConfig, demo_mode: bool = False) -> int:
+def run_gui(config: AppConfig, demo_mode: bool = False, theme_name: str | None = None) -> int:
     from app.backend.memory_store import InMemoryChatStore
     from app.ui.dialogs import ask_storage_recovery
     from app.ui.main_window import MainWindow
 
-    app = create_app()
+    app = create_app(theme_name=theme_name or DEFAULT_THEME)
     # demo mode never touches the real database
     store = InMemoryChatStore() if demo_mode else open_history_store(config, ask_storage_recovery)
     if store is None:
         return EXIT_ERROR
     window = MainWindow(config, store=store, demo_mode=demo_mode)
+    if theme_name:  # --theme wins over the saved setting for this run (not saved)
+        window.set_theme(theme_name)
     window.showMaximized()
     try:
         return app.exec()
@@ -195,16 +199,18 @@ def run_gui(config: AppConfig, demo_mode: bool = False) -> int:
         store.close()
 
 
-def run_screenshot(config: AppConfig, path: Path, delay_ms: int, open_preview: bool) -> int:
+def run_screenshot(config: AppConfig, path: Path, delay_ms: int, open_preview: bool,
+                   theme_name: str = DEFAULT_THEME) -> int:
     """Scripted demo: one user message, a streamed answer, optional preview, then a capture."""
     from PySide6.QtCore import QTimer
 
     from app.ui import demo
     from app.ui.main_window import MainWindow
 
-    app = create_app()
+    app = create_app(theme_name=theme_name)
     # screenshots are deterministic: demo answers, no Ollama health checks
     window = MainWindow(config, token_delay_s=0.004, demo_mode=True, health_checks=False)
+    window.set_theme(theme_name)
     window.resize(*SCREENSHOT_SIZE)
     window.show()
     window.new_chat()
@@ -241,6 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--delay", type=int, default=800, metavar="MS", help="wait before the capture (default 800)")
     parser.add_argument("--no-preview", action="store_true", help="capture with the preview panel closed")
     parser.add_argument("--demo", action="store_true", help="use canned demo answers instead of the model")
+    parser.add_argument("--theme", choices=list(THEMES), help="theme for this run (default: the saved one)")
     args = parser.parse_args(argv)
 
     if getattr(sys, "frozen", False):
@@ -269,8 +276,9 @@ def main(argv: list[str] | None = None) -> int:
         print(summary)
         return EXIT_OK
     if args.screenshot:
-        return run_screenshot(config, Path(args.screenshot), max(0, args.delay), not args.no_preview)
-    return run_gui(config, demo_mode=args.demo)
+        return run_screenshot(config, Path(args.screenshot), max(0, args.delay), not args.no_preview,
+                              args.theme or DEFAULT_THEME)
+    return run_gui(config, demo_mode=args.demo, theme_name=args.theme)
 
 
 if __name__ == "__main__":

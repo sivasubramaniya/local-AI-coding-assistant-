@@ -83,15 +83,16 @@ def highlight_code(code: str, language: str) -> str:
 def code_block_html(block: CodeBlock, index: int, code_font: str) -> str:
     label = html.escape(block.language or "code")
     body = highlight_code(block.code, block.language) or "&nbsp;"
+    colors = theme.code_colors()
     return (
         f'<table width="100%" cellspacing="0" cellpadding="10" '
-        f'style="margin-top:4px; margin-bottom:16px; background-color:{theme.BG_CODE_BLOCK};">'
+        f'style="margin-top:4px; margin-bottom:16px; background-color:{colors["background"]};">'
         f'<tr>'
-        f'<td style="background-color:{theme.BG_CODE_HEADER}; color:{theme.TEXT_SECONDARY}; font-size:13px;">{label}</td>'
-        f'<td align="right" style="background-color:{theme.BG_CODE_HEADER}; font-size:13px;">'
-        f'<a href="{COPY_SCHEME}:{index}" style="color:{theme.TEXT_SECONDARY}; text-decoration:none;">Copy</a></td>'
+        f'<td style="background-color:{colors["header"]}; color:{colors["header_text"]}; font-size:13px;">{label}</td>'
+        f'<td align="right" style="background-color:{colors["header"]}; font-size:13px;">'
+        f'<a href="{COPY_SCHEME}:{index}" style="color:{colors["header_text"]}; text-decoration:none;">Copy</a></td>'
         f'</tr>'
-        f'<tr><td colspan="2" style="background-color:{theme.BG_CODE_BLOCK};">'
+        f'<tr><td colspan="2" style="background-color:{colors["background"]};">'
         f'<pre style="font-family:\'{code_font}\'; font-size:{theme.FONT_CODE}px; '
         f'white-space:pre-wrap; margin:0px;">{body}</pre></td></tr>'
         f'</table>'

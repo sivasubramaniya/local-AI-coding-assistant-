@@ -80,6 +80,7 @@ class MarkdownBrowser(QTextBrowser):
         self.document().setDefaultStyleSheet(theme.message_document_css())
         self.anchorClicked.connect(self._on_anchor)
         self._code_blocks: list[str] = []
+        self._markdown = ""
         self.setFixedHeight(24)
 
     @property
@@ -87,10 +88,17 @@ class MarkdownBrowser(QTextBrowser):
         return list(self._code_blocks)
 
     def set_markdown(self, text: str) -> None:
+        self._markdown = text
         rendered = render_markdown(text)
         self._code_blocks = rendered.code_blocks
         self.setHtml(rendered.html)
         self._update_height()
+
+    def refresh_theme(self) -> None:
+        """Re-render with the active theme's document CSS and code-block colors."""
+        self.document().setDefaultStyleSheet(theme.message_document_css())
+        if self._markdown:
+            self.set_markdown(self._markdown)
 
     def copy_code_block(self, index: int) -> None:
         if 0 <= index < len(self._code_blocks):

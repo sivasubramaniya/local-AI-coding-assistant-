@@ -15,6 +15,7 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -75,9 +76,10 @@ from app.ui.dialogs import CommandApprovalDialog, SettingsDialog
 from app.ui.chat_view import ChatView
 from app.ui.composer import Composer
 from app.ui.icons import icon_size, load_icon
-from app.ui.message_widgets import AssistantMessage, ErrorCard
+from app.ui.message_widgets import AssistantMessage, ErrorCard, MarkdownBrowser
 from app.ui.preview_panel import PreviewPanel
 from app.ui.sidebar import Sidebar
+from app.ui.window_effects import apply_window_effects
 from app.ui.workers import (
     FakeStreamWorker,
     GenerateWorker,
@@ -98,6 +100,7 @@ NO_PROJECT_TO_EXPORT = "This chat has no project to export yet."
 EXPORT_DIR_SETTING = "export_dir"
 COMMAND_TIMEOUT_SETTING = "command_timeout_s"
 DEFAULT_MODEL_MODE_SETTING = "default_model_mode"  # "quality" (14B, default) or "fast" (7B)
+THEME_SETTING = "theme"  # a theme.THEMES name; unknown values fall back to Dark
 TOAST_MS = 2600
 PREVIEW_SHARE = 0.45
 STATUS_LOADING = "Loading model…"
@@ -197,6 +200,7 @@ class MainWindow(QMainWindow):
         self._replace_reply_chat: str | None = None
         # Model selection is explicit and per chat. Nothing here ever picks a model by itself.
         self._fast_default = False
+        self._theme_name = theme.current_theme()
         self._selected_model = config.model_name
         self._active_model = config.model_name
         self._model_presence: dict[str, bool] | None = None
@@ -220,6 +224,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(theme.WINDOW_MIN_WIDTH, theme.WINDOW_MIN_HEIGHT)
 
         central = QWidget()
+        central.setObjectName("glassBackdrop")  # the Glass theme paints a glow here
         root = QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -1405,30 +1410,55 @@ class MainWindow(QMainWindow):
             self._fast_default = self.store.get_setting(DEFAULT_MODEL_MODE_SETTING) == "fast"
         except AppError:
             self._fast_default = False
+        try:
+            saved_theme = self.store.get_setting(THEME_SETTING)
+        except AppError:
+            saved_theme = None
+        self.set_theme(theme.normalize_theme(saved_theme))
+
+    def theme_name(self) -> str:
+        return self._theme_name
+
+    def set_theme(self, theme_name: str) -> None:
+        """Apply a theme live: stylesheet, palette, re-rendered Markdown and the window frame."""
+        name = theme.normalize_theme(theme_name)
+        app = QApplication.instance()
+        if app is not None and name != theme.current_theme():
+            theme.apply_theme(app, name)
+            for browser in self.findChildren(MarkdownBrowser):
+                browser.refresh_theme()
+            self.preview.refresh_theme()
+        self._theme_name = name
+        apply_window_effects(self, enabled=name == theme.THEME_GLASS)
 
     def _edit_settings(self, export_dir: str, timeout_s: float) -> tuple | None:
         dialog = SettingsDialog(export_dir, timeout_s, self, model_name=self.config.model_name,
-                                fast_default=self._fast_default, fast_model_name=self.config.fast_model_name)
+                                fast_default=self._fast_default, fast_model_name=self.config.fast_model_name,
+                                theme_name=self._theme_name)
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
-            return (*dialog.values(), dialog.fast_default())
+            return (*dialog.values(), dialog.fast_default(), dialog.theme_name())
         return None
 
     def open_settings(self) -> None:
+        # editors may return (export_dir, timeout), + fast_default, + theme name
         values = self.settings_editor(self.export_dir(), self.config.command_timeout_s)
         if values is None:
             return
         export_dir, timeout_s = values[0], values[1]
         fast_default = bool(values[2]) if len(values) > 2 else self._fast_default
+        theme_name = theme.normalize_theme(values[3]) if len(values) > 3 else self._theme_name
         try:
             if export_dir:
                 self.store.set_setting(EXPORT_DIR_SETTING, export_dir)
             self.store.set_setting(COMMAND_TIMEOUT_SETTING, str(int(timeout_s)))
             self.store.set_setting(DEFAULT_MODEL_MODE_SETTING, "fast" if fast_default else "quality")
+            self.store.set_setting(THEME_SETTING, theme_name)
         except AppError as exc:
             self._storage_failed(exc)
             return
         self.config = replace(self.config, command_timeout_s=float(timeout_s))
         self._fast_default = fast_default
+        self.set_theme(theme_name)
         self.show_toast("Settings saved.")
 
     # --- lifecycle -------------------------------------------------------------

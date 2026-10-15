@@ -68,6 +68,109 @@ COLORS: dict[str, str] = {
     "white": WHITE,
 }
 
+# --- Themes -----------------------------------------------------------------
+THEME_DARK = "dark"
+THEME_GLASS = "glass"
+THEMES: dict[str, str] = {THEME_DARK: "Dark", THEME_GLASS: "Glass"}  # name -> label in Settings
+DEFAULT_THEME = THEME_DARK
+
+# Glass: translucent panels over a navy -> purple gradient. Qt QSS has no blur, so the
+# "frost" is a light rgba fill, a 1px light border and a brighter top edge. Separate
+# windows (menus, tooltips, dialogs, combo popups) cannot be translucent: opaque values.
+# rgba alpha is 0-255.
+GLASS: dict[str, str] = {
+    # backdrop
+    "bg_gradient_start": "#0A0F26",
+    "bg_gradient_mid": "#11173A",
+    "bg_gradient_end": "#24164A",
+    "glow_blue": "rgba(70, 116, 255, 72)",
+    "glow_purple": "rgba(150, 88, 255, 60)",
+    "glow_none": "rgba(0, 0, 0, 0)",
+    # panels
+    "panel": "rgba(255, 255, 255, 13)",
+    "panel_strong": "rgba(255, 255, 255, 20)",
+    "panel_hover": "rgba(255, 255, 255, 26)",
+    "panel_selected": "rgba(255, 255, 255, 38)",
+    "panel_reading": "rgba(8, 11, 30, 150)",
+    "border": "rgba(255, 255, 255, 32)",
+    "border_strong": "rgba(255, 255, 255, 56)",
+    "highlight": "rgba(255, 255, 255, 72)",
+    "user_bubble_top": "rgba(84, 136, 255, 175)",
+    "user_bubble_bottom": "rgba(46, 92, 210, 165)",
+    "scroll_handle": "rgba(255, 255, 255, 46)",
+    "scroll_handle_hover": "rgba(255, 255, 255, 84)",
+    # code stays solid and darker than the glass panels
+    "code_bg": "#090C1A",
+    "code_header": "#131833",
+    "code_gutter_text": "#5C6488",
+    "inline_code": "#262D52",
+    # opaque colors for separate windows
+    "popup_bg": "#171C3A",
+    "popup_hover": "#272F5A",
+    "popup_border": "#3B4377",
+    "dialog_bg": "#12172F",
+    "input_bg": "#1B2142",
+    "selection": "#2F55B8",
+}
+
+_current_theme: dict[str, str] = {"name": DEFAULT_THEME}
+
+
+def normalize_theme(name: str | None) -> str:
+    """A known theme name; anything else (None, typos, old values) falls back to Dark."""
+    key = (name or "").strip().lower()
+    return key if key in THEMES else DEFAULT_THEME
+
+
+def current_theme() -> str:
+    return _current_theme["name"]
+
+
+def qcolor(value: str):
+    """QColor from '#RRGGBB' or 'rgba(r, g, b, a)' (a is 0-255, or 0-1 when it has a dot)."""
+    from PySide6.QtGui import QColor
+
+    text = value.strip()
+    if text.lower().startswith("rgba(") and text.endswith(")"):
+        parts = [p.strip() for p in text[5:-1].split(",")]
+        if len(parts) != 4:
+            raise ValueError(f"bad rgba color: {value!r}")
+        r, g, b = (int(p) for p in parts[:3])
+        alpha = round(float(parts[3]) * 255) if "." in parts[3] else int(parts[3])
+        return QColor(r, g, b, alpha)
+    color = QColor(text)
+    if not color.isValid():
+        raise ValueError(f"bad color: {value!r}")
+    return color
+
+
+def item_background(selected: bool, theme_name: str | None = None) -> str:
+    """Row background for the sidebar lists (selected, else hover)."""
+    if normalize_theme(theme_name or current_theme()) == THEME_GLASS:
+        return GLASS["panel_selected"] if selected else GLASS["panel_hover"]
+    return BG_ITEM_SELECTED if selected else BG_ITEM_HOVER
+
+
+def code_colors(theme_name: str | None = None) -> dict[str, str]:
+    """Solid colors for code blocks, their header, inline code and the line-number gutter."""
+    if normalize_theme(theme_name or current_theme()) == THEME_GLASS:
+        return {
+            "background": GLASS["code_bg"],
+            "header": GLASS["code_header"],
+            "header_text": TEXT_SECONDARY,
+            "inline": GLASS["inline_code"],
+            "gutter_bg": GLASS["code_bg"],
+            "gutter_text": GLASS["code_gutter_text"],
+        }
+    return {
+        "background": BG_CODE_BLOCK,
+        "header": BG_CODE_HEADER,
+        "header_text": TEXT_SECONDARY,
+        "inline": BG_INLINE_CODE,
+        "gutter_bg": BG_CODE_BLOCK,
+        "gutter_text": "#5A5A5A",
+    }
+
 # --- Typography (section 3) -------------------------------------------------
 UI_FONT_CANDIDATES = ("Segoe UI", "Arial")
 CODE_FONT_CANDIDATES = ("Cascadia Code", "Cascadia Mono", "Consolas", "Courier New")
@@ -139,16 +242,24 @@ def message_document_css(code_font: str | None = None) -> str:
         h1, h2, h3, h4, h5, h6 {{ font-size: {FONT_MESSAGE}px; font-weight: 700;
             margin-top: 10px; margin-bottom: 12px; }}
         a {{ color: {TEXT_PRIMARY}; text-decoration: underline; }}
-        code {{ background-color: {BG_INLINE_CODE}; font-family: '{code_font}';
+        code {{ background-color: {code_colors()['inline']}; font-family: '{code_font}';
             font-size: {FONT_CODE}px; }}
         strong, b {{ font-weight: 700; }}
     """
 
 
-def build_stylesheet(ui_font: str | None = None, code_font: str | None = None) -> str:
-    """One QSS string for the whole application, generated from the tokens."""
+def build_stylesheet(ui_font: str | None = None, code_font: str | None = None,
+                     theme_name: str = DEFAULT_THEME) -> str:
+    """One QSS string for the whole application. Glass = the Dark sheet + an override block."""
     ui_font = ui_font or ui_font_family()
     code_font = code_font or code_font_family()
+    sheet = _dark_stylesheet(ui_font, code_font)
+    if normalize_theme(theme_name) == THEME_GLASS:
+        sheet += _glass_overrides()
+    return sheet
+
+
+def _dark_stylesheet(ui_font: str, code_font: str) -> str:
     c = COLORS
     return f"""
 QWidget {{
@@ -486,35 +597,153 @@ QLineEdit {{
 """
 
 
-def apply_theme(app) -> tuple[str, str]:
-    """Apply Fusion style, a dark palette, fonts and the stylesheet to a QApplication."""
+def _glass_overrides() -> str:
+    """Appended after the Dark sheet; later rules with the same selector win."""
+    g = GLASS
+    c = COLORS
+    return f"""
+/* ========== Glass theme overrides ========== */
+QMainWindow {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 {g['bg_gradient_start']}, stop:0.55 {g['bg_gradient_mid']}, stop:1 {g['bg_gradient_end']});
+}}
+QWidget#glassBackdrop {{
+    background: qradialgradient(cx:0.12, cy:0.06, radius:0.75, fx:0.12, fy:0.06,
+        stop:0 {g['glow_blue']}, stop:1 {g['glow_none']});
+}}
+QWidget#chatPanel {{
+    background: qradialgradient(cx:0.85, cy:0.95, radius:0.8, fx:0.85, fy:0.95,
+        stop:0 {g['glow_purple']}, stop:1 {g['glow_none']});
+}}
+QWidget#chatInner, QScrollArea#chatView {{ background: transparent; }}
+
+/* ---------- Sidebar ---------- */
+QFrame#sidebar {{
+    background: {g['panel']};
+    border-right: 1px solid {g['border']};
+}}
+QToolButton#navButton:hover, QToolButton#iconButton:hover, QToolButton#iconButton:checked,
+QFrame#modelCard:hover, QPushButton#settingsButton:hover {{ background: {g['panel_hover']}; }}
+QLineEdit#searchField {{
+    background: {g['panel_strong']};
+    border: 1px solid {g['border']};
+    border-top-color: {g['highlight']};
+}}
+QLineEdit#searchField:focus {{ border-color: {c['accent_primary']}; }}
+QLabel#modelBadge {{ background: {g['panel_selected']}; }}
+QPushButton#settingsButton {{ border-color: {g['border_strong']}; }}
+
+/* ---------- Chat top bar ---------- */
+QFrame#topBar {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {g['panel']}, stop:1 {g['glow_none']});
+}}
+QToolButton#topBarButton:hover, QToolButton#topBarButton:checked {{ background: {g['panel_hover']}; }}
+
+/* ---------- Messages ---------- */
+QLabel#userBubble {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 {g['user_bubble_top']}, stop:1 {g['user_bubble_bottom']});
+}}
+QLabel#codeChip {{ background: {g['panel_strong']}; }}
+QFrame#fileCard, QFrame#agentCard {{
+    background: {g['panel_strong']};
+    border: 1px solid {g['border']};
+    border-top-color: {g['highlight']};
+}}
+QFrame#fileCard:hover {{ border-color: {g['border_strong']}; border-top-color: {g['highlight']}; }}
+QToolButton#actionButton:hover, QPushButton#secondaryButton:hover {{ background: {g['panel_hover']}; }}
+QPushButton#secondaryButton {{ border-color: {g['border_strong']}; }}
+QPlainTextEdit#diffView {{ background: {g['code_bg']}; border-color: {g['border']}; }}
+QLabel#toast {{ background: {g['popup_bg']}; border-color: {g['popup_border']}; }}
+
+/* ---------- Composer ---------- */
+QFrame#composerPill {{
+    background: {g['panel_strong']};
+    border: 1px solid {g['border']};
+    border-top-color: {g['highlight']};
+}}
+QPushButton#projectChip:hover {{ background: {g['panel_hover']}; }}
+
+/* ---------- Preview panel ---------- */
+QFrame#previewPanel {{ background: {g['panel']}; border-left: 1px solid {g['border']}; }}
+QFrame#previewHeader {{ background: {g['panel']}; }}
+QToolButton#fileDropdown, QToolButton#roundButton, QPushButton#linkButton {{ background: {g['panel_strong']}; }}
+QToolButton#fileDropdown:hover, QToolButton#roundButton:hover, QToolButton#roundButton:checked,
+QPushButton#linkButton:hover {{ background: {g['panel_selected']}; }}
+QPushButton#tabButton:checked {{ background: {g['panel_selected']}; }}
+QTreeWidget#fileTree {{ background: transparent; border-bottom: 1px solid {g['border']}; }}
+QTreeWidget#fileTree::item:selected {{ background: {g['panel_selected']}; }}
+QTreeWidget#fileTree::item:hover {{ background: {g['panel_hover']}; }}
+QPlainTextEdit#codeView {{ background: {g['code_bg']}; }}
+QTextBrowser#markdownPreview, QTextBrowser#htmlFallback {{ background: {g['panel_reading']}; }}
+QFrame#previewNotice {{ background: {g['panel_strong']}; border-bottom-color: {g['border']}; }}
+
+/* ---------- Common ---------- */
+QSplitter::handle {{ background: {g['border']}; }}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{ background: {g['scroll_handle']}; }}
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{ background: {g['scroll_handle_hover']}; }}
+/* menus, tooltips, dialogs and combo popups are separate windows: opaque colors only */
+QMenu {{ background: {g['popup_bg']}; border: 1px solid {g['popup_border']}; }}
+QMenu::item:selected {{ background: {g['popup_hover']}; }}
+QToolTip {{ background: {g['popup_bg']}; border: 1px solid {g['popup_border']}; }}
+QDialog {{ background: {g['dialog_bg']}; }}
+QPushButton {{ background: {g['popup_bg']}; border-color: {g['popup_border']}; }}
+QPushButton:hover {{ background: {g['popup_hover']}; }}
+QLabel#commandText {{ background: {g['code_bg']}; border-color: {g['popup_border']}; }}
+QLineEdit {{ background: {g['input_bg']}; border: 1px solid {g['popup_border']}; }}
+QComboBox {{
+    background: {g['input_bg']};
+    border: 1px solid {g['popup_border']};
+    border-radius: 8px;
+    padding: 4px 8px;
+}}
+QComboBox QAbstractItemView {{
+    background: {g['popup_bg']};
+    border: 1px solid {g['popup_border']};
+    selection-background-color: {g['popup_hover']};
+    outline: 0;
+}}
+"""
+
+
+def _palette_colors(theme_name: str) -> dict[str, str]:
+    """QPalette role name -> color. Glass uses opaque colors (palettes also back separate windows)."""
+    if theme_name == THEME_GLASS:
+        g = GLASS
+        return {
+            "Window": g["dialog_bg"], "WindowText": TEXT_PRIMARY, "Base": g["input_bg"],
+            "AlternateBase": g["popup_hover"], "Text": TEXT_PRIMARY, "Button": g["popup_bg"],
+            "ButtonText": TEXT_PRIMARY, "Highlight": g["selection"], "HighlightedText": WHITE,
+            "ToolTipBase": g["popup_bg"], "ToolTipText": TEXT_PRIMARY, "PlaceholderText": TEXT_SECONDARY,
+            "Link": ACCENT_PRIMARY,
+        }
+    return {
+        "Window": BG_APP, "WindowText": TEXT_PRIMARY, "Base": BG_CARD, "AlternateBase": BG_ITEM_HOVER,
+        "Text": TEXT_PRIMARY, "Button": BG_BUTTON_ROUND, "ButtonText": TEXT_PRIMARY,
+        "Highlight": ACCENT_USER_BUBBLE, "HighlightedText": WHITE, "ToolTipBase": BG_BUTTON_ROUND,
+        "ToolTipText": TEXT_PRIMARY, "PlaceholderText": TEXT_SECONDARY, "Link": ACCENT_PRIMARY,
+    }
+
+
+def apply_theme(app, theme_name: str = DEFAULT_THEME) -> tuple[str, str]:
+    """Apply Fusion style, the theme's palette, fonts and stylesheet to a QApplication.
+
+    Can be called again at any time to switch themes live.
+    """
     from PySide6.QtGui import QColor, QFont, QPalette
 
+    name = normalize_theme(theme_name)
     ui_font, code_font = resolve_fonts()
     app.setStyle("Fusion")
 
     palette = QPalette()
-    role = QPalette.ColorRole
-    for r, color in (
-        (role.Window, BG_APP),
-        (role.WindowText, TEXT_PRIMARY),
-        (role.Base, BG_CARD),
-        (role.AlternateBase, BG_ITEM_HOVER),
-        (role.Text, TEXT_PRIMARY),
-        (role.Button, BG_BUTTON_ROUND),
-        (role.ButtonText, TEXT_PRIMARY),
-        (role.Highlight, ACCENT_USER_BUBBLE),
-        (role.HighlightedText, WHITE),
-        (role.ToolTipBase, BG_BUTTON_ROUND),
-        (role.ToolTipText, TEXT_PRIMARY),
-        (role.PlaceholderText, TEXT_SECONDARY),
-        (role.Link, ACCENT_PRIMARY),
-    ):
-        palette.setColor(r, QColor(color))
+    for role_name, color in _palette_colors(name).items():
+        palette.setColor(getattr(QPalette.ColorRole, role_name), QColor(color))
     app.setPalette(palette)
 
     font = QFont(ui_font)
     font.setPixelSize(FONT_SIDEBAR_ITEM)
     app.setFont(font)
-    app.setStyleSheet(build_stylesheet(ui_font, code_font))
+    _current_theme["name"] = name  # set before the repaint, so Python-drawn colors follow
+    app.setStyleSheet(build_stylesheet(ui_font, code_font, name))
     return ui_font, code_font

@@ -139,4 +139,9 @@ def test_settings_dialog_values(themed_app):
     assert dialog.values() == ("C:/Exports", 45)
     dialog.timeout_spin.setValue(5000)
     assert dialog.values()[1] == 3600  # clamped to the allowed range
-    assert not dialog.theme_combo.model().item(1).isEnabled()
+    labels = [dialog.theme_combo.itemText(i) for i in range(dialog.theme_combo.count())]
+    assert labels == ["Dark", "Glass"]
+    assert all(dialog.theme_combo.model().item(i).isEnabled() for i in range(2))
+    assert dialog.theme_name() == "dark"  # the default
+    assert SettingsDialog("C:/Exports", 45, theme_name="glass").theme_name() == "glass"
+    assert SettingsDialog("C:/Exports", 45, theme_name="neon").theme_name() == "dark"
