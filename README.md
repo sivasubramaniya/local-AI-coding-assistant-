@@ -5,7 +5,7 @@ answer comes from a model on your own computer through [Ollama](https://ollama.c
 `qwen2.5-coder-14b:latest` by default, or the optional `qwen2.5-coder-7b:latest` when you pick
 **Fast mode** for a chat. No cloud APIs, no telemetry, no silent model switching.
 
-Version **1.2.1** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
+Version **1.3.0** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
 
 ![Chat with a highlighted code answer](docs/screenshots/03-answer.png)
 
@@ -15,9 +15,9 @@ Version **1.2.1** · MIT License · see [CHANGELOG.md](CHANGELOG.md)
 
 ![Styled HTML preview of a generated project](docs/screenshots/preview-styled-exe.png)
 
-| Light theme | Dark theme |
-|---|---|
-| ![Light theme](docs/screenshots/theme-light-chat.png) | ![Dark theme](docs/screenshots/theme-dark-chat.png) |
+| Light theme | Dark theme | Glass theme |
+|---|---|---|
+| ![Light theme](docs/screenshots/theme-light-chat.png) | ![Dark theme](docs/screenshots/theme-dark-chat.png) | ![Glass theme](docs/screenshots/theme-glass-chat.png) |
 
 Screenshots are captured by the REAL end-to-end test (`tests/test_integration_app.py`) with the local model.
 The design was inspired by modern chat-based developer tools.
@@ -29,9 +29,11 @@ The design was inspired by modern chat-based developer tools.
 - **Quality (14B) / Fast (7B)**: choose the model per chat in the composer (default for new chats in
   Settings). The choice is saved with the chat, every answer shows which model wrote it, and a missing
   model is reported with the exact `ollama create` command — the app never falls back to the other one.
-- **Light, Dark and System themes** (Settings → Theme). Switching applies instantly to the whole window —
+- **Light, Dark, System and Glass themes** (Settings → Theme). Switching applies instantly to the whole window —
   messages, code highlighting, icons, preview — and is remembered. System follows the Windows setting live.
-  Both palettes pass a WCAG AA contrast test.
+  Glass draws translucent panels over a dark gradient (tinted, not blurred — Qt has no blur) and, on Windows 11,
+  a dark title bar with a Mica frame. All palettes pass a WCAG AA contrast test; Glass text is also checked over
+  the translucent panels.
 - **Persistent history** in SQLite: chats, messages, feedback and projects survive restarts.
 - **Project mode**: the model plans the files first (Plan card); nothing is written until you click
   **Generate files**. Files appear as cards and in the preview panel (code view + offline HTML/Markdown preview).

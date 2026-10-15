@@ -42,12 +42,12 @@ class SidebarItemDelegate(QStyledItemDelegate):
         state = option.state
         background = None
         if state & QStyle.StateFlag.State_Selected:
-            background = theme.BG_ITEM_SELECTED
+            background = theme.item_background(selected=True)
         elif state & QStyle.StateFlag.State_MouseOver:
-            background = theme.BG_ITEM_HOVER
+            background = theme.item_background(selected=False)
         if background:
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(background))
+            painter.setBrush(theme.qcolor(background))
             painter.drawRoundedRect(rect, 10, 10)
 
         x = rect.left() + 12

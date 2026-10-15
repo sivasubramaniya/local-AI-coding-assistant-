@@ -1,7 +1,8 @@
-"""Capture Light and Dark screenshots of the main views (offscreen, demo data, no model).
+"""Capture theme screenshots of the main views (offscreen, demo data, no model).
 
-Usage:  .\\venv\\Scripts\\python.exe scripts\\theme_screenshots.py
-Writes docs/screenshots/theme-{light,dark}-{chat,preview,settings,plan}.png
+Usage:  .\\venv\\Scripts\\python.exe scripts\\theme_screenshots.py [MODE ...]
+MODE is dark, light or glass (default: dark light).
+Writes docs/screenshots/theme-{MODE}-{chat,preview,settings,plan}.png
 """
 
 from __future__ import annotations
@@ -37,14 +38,14 @@ def settle() -> None:
     QTest.qWait(400)
 
 
-def main() -> int:
+def main(modes: list[str] | None = None) -> int:
     app = QApplication(sys.argv[:1])
     theme.apply_theme(app)
     tmp = Path(tempfile.mkdtemp(prefix="laa-theme-"))
     # a neutral export folder, so no user name can appear in the Settings screenshot
     config = load_config({"LAA_DATA_DIR": str(tmp / "data"), "LAA_EXPORT_DIR": r"D:\laa-demo\export"})
     OUT.mkdir(parents=True, exist_ok=True)
-    for mode in ("dark", "light"):
+    for mode in modes or ("dark", "light"):
         win = MainWindow(config, demo_mode=True, health_checks=False, use_webengine=False)
         win.resize(1600, 900)
         win.show()
@@ -81,4 +82,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

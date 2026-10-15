@@ -230,6 +230,29 @@ stop at every phase boundary and wait for approval.
 
 ---
 
+## Phase 17 — Glass Theme  `[~]`
+
+Goal: add "Glass" as a fourth theme next to Light / Dark / System, built on Phase 15's palette
+system. Existing themes must look exactly as they do now.
+
+Restrictions: fit Phase 15's design (palette structure, theme switching, settings key) — no parallel
+theme mechanism. Qt QSS has no blur: glass = translucent rgba panels over a painted gradient + glow
+backdrop, light borders, brighter top edge. Popups, menus and dialogs use opaque colors; code blocks
+stay solid. Don't style QSpinBox. No new packages. Follow the repo's versioning convention.
+
+- [x] 17.1 Glass palette/tokens in the Phase 15 structure
+- [x] 17.2 Glass stylesheet overrides + gradient/glow backdrop
+- [x] 17.3 Port `app/ui/window_effects.py` (Win11 dark title bar + Mica, silent no-op elsewhere); apply on Glass, reset otherwise
+- [x] 17.4 Glass option in Settings, saved, live switch, restored on restart
+- [x] 17.5 Python-painted colors (sidebar rows, code blocks, gutter) follow Glass
+- [x] 17.6 Port `test_glass_theme.py` adapted to Phase 15; add `test_repo_hygiene.py` checks only where they pass against the repo's files
+- [x] 17.7 Glass screenshot in `docs/screenshots`, README + CHANGELOG entry
+- [x] Tests: hash/snapshot test that Light, Dark, System output is unchanged; full suite with the repo's pytest config: 0 failed
+- [x] Glass selectable and live; other themes unchanged (hash tests); 717 passed, 1 skipped (MOCK); v1.3.0
+- [ ] Branch `phase-17-glass-theme` pushed and PR opened (waiting for owner OK)
+
+---
+
 ## Final Deliverables Checklist
 
 - [x] Native Windows desktop app (PySide6)
@@ -274,3 +297,4 @@ stop at every phase boundary and wait for approval.
 | 2026-10-13 | 16 | HTML preview fixed: real file URLs (CSS/JS/images work, offline), Open in browser uses the real file, live refresh, missing-image placeholders and missing-code reports, validator reference check; v1.2.1 | 663 passed, 1 skipped (MOCK); REAL 7B portfolio test passed; exe preview screenshot OK |
 | 2026-10-13 | 14b | Step 1 (commit email rewrite) closed as won't do (owner decision): current email kept, history not rewritten | — (docs only) |
 | 2026-10-13 | 10 | Manual Wi-Fi-off check by the owner with the packaged exe 1.2.1: chat, project generation, preview and ZIP export worked; Phase 10 closed | REAL (owner, manual) |
+| 2026-10-15 | 17 | Glass theme as a third palette on the Phase 15 system (opaque tokens + translucent main-window effects, gradient/glow backdrop), Windows 11 dark title bar + Mica via ctypes, Settings → Glass (saved, live, restored), sidebar rows translucent, Light/Dark output hash-locked, composited-contrast test, repo hygiene tests, glass screenshots; v1.3.0 | 717 passed, 1 skipped (MOCK); pytest exits 0xC0000409 after the summary, same on unmodified main |

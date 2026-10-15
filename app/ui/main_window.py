@@ -79,6 +79,7 @@ from app.ui.icons import icon_size, load_icon, set_themed_icon, set_themed_pixma
 from app.ui.message_widgets import AssistantMessage, ErrorCard
 from app.ui.preview_panel import PreviewPanel
 from app.ui.sidebar import Sidebar
+from app.ui.window_effects import apply_window_effects
 from app.ui.workers import (
     FakeStreamWorker,
     GenerateWorker,
@@ -99,7 +100,7 @@ NO_PROJECT_TO_EXPORT = "This chat has no project to export yet."
 EXPORT_DIR_SETTING = "export_dir"
 COMMAND_TIMEOUT_SETTING = "command_timeout_s"
 DEFAULT_MODEL_MODE_SETTING = "default_model_mode"
-THEME_SETTING = "theme"  # "dark" (default), "light" or "system"  # "quality" (14B, default) or "fast" (7B)
+THEME_SETTING = "theme"  # "dark" (default), "light", "system" or "glass"  # "quality" (14B, default) or "fast" (7B)
 TOAST_MS = 2600
 PREVIEW_SHARE = 0.45
 STATUS_LOADING = "Loading model…"
@@ -156,7 +157,7 @@ def finished_status(model_name: str, stats: StreamStats | None) -> str:
 
 class MainWindow(QMainWindow):
     streamFinished = Signal()
-    themeApplied = Signal(str)  # the palette now in use ("dark" or "light")
+    themeApplied = Signal(str)  # the palette now in use ("dark", "light" or "glass")
     exportFinished = Signal(object)  # ExportResult or AppError
     healthChecked = Signal(object)  # HealthResult
 
@@ -223,6 +224,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(theme.WINDOW_MIN_WIDTH, theme.WINDOW_MIN_HEIGHT)
 
         central = QWidget()
+        central.setObjectName("glassBackdrop")  # Glass paints a glow here; no rule in other themes
         root = QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -1452,6 +1454,7 @@ class MainWindow(QMainWindow):
 
         app = QApplication.instance()
         palette = theme.apply_mode(app, mode) if app is not None else theme.resolve_mode(mode)
+        apply_window_effects(self, enabled=palette == "glass")  # Win11 frame; a no-op elsewhere
         self.themeApplied.emit(palette)
         return palette
 

@@ -89,9 +89,74 @@ LIGHT: dict[str, str] = {
     "white": "#FFFFFF",
 }
 
-PALETTES: dict[str, dict[str, str]] = {"dark": DARK, "light": LIGHT}
-CODE_STYLES: dict[str, str] = {"dark": "github-dark", "light": "default"}  # Pygments styles
-THEME_MODES = ("dark", "light", "system")
+# Glass: the same tokens, all opaque. They color dialogs, menus, tooltips, the Qt palette and
+# code (code stays solid). The translucent look comes from GLASS_EFFECTS, used only by the
+# override block that build_stylesheet() appends while Glass is active. Qt QSS has no blur.
+GLASS: dict[str, str] = {
+    "bg_app": "#0E1330",
+    "bg_sidebar": "#111737",
+    "border_subtle": "#2A3160",
+    "bg_item_hover": "#1D2448",
+    "bg_item_selected": "#283058",
+    "bg_card": "#161C3B",
+    "border_card": "#3B4377",
+    "border_hover": "#56609A",
+    "bg_inline_code": "#262D52",
+    "bg_code_block": "#090C1A",
+    "bg_code_header": "#131833",
+    "text_primary": "#ECECEC",
+    "text_secondary": "#B4BAD6",
+    "text_disabled": "#4E5680",
+    "accent_user_bubble": "#2F55B8",
+    "user_bubble_text": "#FFFFFF",
+    "accent_primary": "#2F6FE0",
+    "accent_primary_hover": "#4A82E8",
+    "accent_disabled": "#2A3A6E",
+    "on_accent": "#FFFFFF",
+    "success": "#3FB950",
+    "error": "#F85149",
+    "warning": "#D29922",
+    "bg_error_card": "#2A1424",
+    "bg_retry_hover": "#3A1A2C",
+    "preview_bg_start": "#1E2A5A",
+    "preview_bg_end": "#4B3A9A",
+    "bg_button_round": "#1B2142",
+    "bg_button_round_hover": "#272F5A",
+    "chip_on_bg": "#1B2B55",
+    "chip_on_text": "#8FB6FF",
+    "scrollbar": "#3B4377",
+    "scrollbar_hover": "#56609A",
+    "gutter_bg": "#090C1A",
+    "gutter_text": "#8A90B0",
+    "white": "#FFFFFF",
+}
+
+# Glass-only effects (rgba alpha is 0-255): backdrop gradient + glows, translucent panels,
+# light borders and a brighter top edge. Only for widgets inside the main window.
+GLASS_EFFECTS: dict[str, str] = {
+    "bg_gradient_start": "#0A0F26",
+    "bg_gradient_mid": "#11173A",
+    "bg_gradient_end": "#24164A",
+    "glow_blue": "rgba(70, 116, 255, 72)",
+    "glow_purple": "rgba(150, 88, 255, 60)",
+    "glow_none": "rgba(0, 0, 0, 0)",
+    "panel": "rgba(255, 255, 255, 13)",
+    "panel_strong": "rgba(255, 255, 255, 20)",
+    "panel_hover": "rgba(255, 255, 255, 26)",
+    "panel_selected": "rgba(255, 255, 255, 38)",
+    "panel_reading": "rgba(8, 11, 30, 150)",
+    "border": "rgba(255, 255, 255, 32)",
+    "border_strong": "rgba(255, 255, 255, 56)",
+    "highlight": "rgba(255, 255, 255, 72)",
+    "user_bubble_top": "rgba(84, 136, 255, 175)",
+    "user_bubble_bottom": "rgba(46, 92, 210, 165)",
+    "scroll_handle": "rgba(255, 255, 255, 46)",
+    "scroll_handle_hover": "rgba(255, 255, 255, 84)",
+}
+
+PALETTES: dict[str, dict[str, str]] = {"dark": DARK, "light": LIGHT, "glass": GLASS}
+CODE_STYLES: dict[str, str] = {"dark": "github-dark", "light": "default", "glass": "github-dark"}  # Pygments
+THEME_MODES = ("dark", "light", "system", "glass")
 DEFAULT_THEME_MODE = "dark"
 
 COLORS: dict[str, str] = dict(DARK)
@@ -108,7 +173,7 @@ CHIP_ON_TEXT = SCROLLBAR = SCROLLBAR_HOVER = GUTTER_BG = GUTTER_TEXT = WHITE = "
 
 
 def set_palette(name: str) -> None:
-    """Make ``name`` ("dark" or "light") the active palette for every later ``theme.X`` read."""
+    """Make ``name`` ("dark", "light" or "glass") the active palette for every later ``theme.X`` read."""
     global _active_palette, CODE_STYLE
     if name not in PALETTES:
         raise ValueError(f"Unknown palette {name!r}; use one of {', '.join(PALETTES)}")
@@ -122,6 +187,31 @@ def set_palette(name: str) -> None:
 
 def active_palette() -> str:
     return _active_palette
+
+
+def qcolor(value: str):
+    """QColor from '#RRGGBB' or 'rgba(r, g, b, a)' (a is 0-255, or 0-1 when it has a dot)."""
+    from PySide6.QtGui import QColor
+
+    text = value.strip()
+    if text.lower().startswith("rgba(") and text.endswith(")"):
+        parts = [p.strip() for p in text[5:-1].split(",")]
+        if len(parts) != 4:
+            raise ValueError(f"bad rgba color: {value!r}")
+        r, g, b = (int(p) for p in parts[:3])
+        alpha = round(float(parts[3]) * 255) if "." in parts[3] else int(parts[3])
+        return QColor(r, g, b, alpha)
+    color = QColor(text)
+    if not color.isValid():
+        raise ValueError(f"bad color: {value!r}")
+    return color
+
+
+def item_background(selected: bool) -> str:
+    """Sidebar row background (selected, else hover); translucent in Glass."""
+    if _active_palette == "glass":
+        return GLASS_EFFECTS["panel_selected" if selected else "panel_hover"]
+    return BG_ITEM_SELECTED if selected else BG_ITEM_HOVER
 
 
 set_palette("dark")
@@ -204,9 +294,16 @@ def message_document_css(code_font: str | None = None) -> str:
 
 
 def build_stylesheet(ui_font: str | None = None, code_font: str | None = None) -> str:
-    """One QSS string for the whole application, generated from the tokens."""
+    """One QSS string for the whole application, generated from the tokens (+ Glass overrides)."""
     ui_font = ui_font or ui_font_family()
     code_font = code_font or code_font_family()
+    sheet = _base_stylesheet(ui_font, code_font)
+    if _active_palette == "glass":
+        sheet += _glass_overrides()
+    return sheet
+
+
+def _base_stylesheet(ui_font: str, code_font: str) -> str:
     c = COLORS
     return f"""
 QWidget {{
@@ -544,6 +641,89 @@ QLineEdit {{
 """
 
 
+def _glass_overrides() -> str:
+    """Translucent panels over a gradient + glow backdrop. Appended after the base sheet (later
+    rules win). Menus, tooltips and dialogs keep the opaque Glass tokens from the base sheet."""
+    g = GLASS_EFFECTS
+    c = COLORS
+    return f"""
+/* ========== Glass overrides ========== */
+QMainWindow {{
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 {g['bg_gradient_start']}, stop:0.55 {g['bg_gradient_mid']}, stop:1 {g['bg_gradient_end']});
+}}
+QWidget#glassBackdrop {{
+    background: qradialgradient(cx:0.12, cy:0.06, radius:0.75, fx:0.12, fy:0.06,
+        stop:0 {g['glow_blue']}, stop:1 {g['glow_none']});
+}}
+QWidget#chatPanel {{
+    background: qradialgradient(cx:0.85, cy:0.95, radius:0.8, fx:0.85, fy:0.95,
+        stop:0 {g['glow_purple']}, stop:1 {g['glow_none']});
+}}
+QWidget#chatInner, QScrollArea#chatView {{ background: transparent; }}
+
+/* ---------- Sidebar ---------- */
+QFrame#sidebar {{ background: {g['panel']}; border-right: 1px solid {g['border']}; }}
+QToolButton#navButton:hover, QToolButton#iconButton:hover, QToolButton#iconButton:checked,
+QFrame#modelCard:hover, QPushButton#settingsButton:hover {{ background: {g['panel_hover']}; }}
+QLineEdit#searchField {{
+    background: {g['panel_strong']};
+    border: 1px solid {g['border']};
+    border-top-color: {g['highlight']};
+}}
+QLineEdit#searchField:focus {{ border-color: {c['accent_primary']}; }}
+QLabel#modelBadge {{ background: {g['panel_selected']}; }}
+QPushButton#settingsButton {{ border-color: {g['border_strong']}; }}
+
+/* ---------- Chat top bar ---------- */
+QFrame#topBar {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {g['panel']}, stop:1 {g['glow_none']});
+}}
+QToolButton#topBarButton:hover, QToolButton#topBarButton:checked {{ background: {g['panel_hover']}; }}
+
+/* ---------- Messages ---------- */
+QLabel#userBubble {{
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 {g['user_bubble_top']}, stop:1 {g['user_bubble_bottom']});
+}}
+QLabel#codeChip {{ background: {g['panel_strong']}; }}
+QFrame#fileCard, QFrame#agentCard {{
+    background: {g['panel_strong']};
+    border: 1px solid {g['border']};
+    border-top-color: {g['highlight']};
+}}
+QFrame#fileCard:hover {{ border-color: {g['border_strong']}; border-top-color: {g['highlight']}; }}
+QToolButton#actionButton:hover, QPushButton#secondaryButton:hover {{ background: {g['panel_hover']}; }}
+QPushButton#secondaryButton {{ border-color: {g['border_strong']}; }}
+
+/* ---------- Composer ---------- */
+QFrame#composerPill {{
+    background: {g['panel_strong']};
+    border: 1px solid {g['border']};
+    border-top-color: {g['highlight']};
+}}
+QPushButton#projectChip:hover {{ background: {g['panel_hover']}; }}
+
+/* ---------- Preview panel ---------- */
+QFrame#previewPanel {{ background: {g['panel']}; border-left: 1px solid {g['border']}; }}
+QFrame#previewHeader {{ background: {g['panel']}; }}
+QToolButton#fileDropdown, QToolButton#roundButton, QPushButton#linkButton {{ background: {g['panel_strong']}; }}
+QToolButton#fileDropdown:hover, QToolButton#roundButton:hover, QToolButton#roundButton:checked,
+QPushButton#linkButton:hover {{ background: {g['panel_selected']}; }}
+QPushButton#tabButton:checked {{ background: {g['panel_selected']}; }}
+QTreeWidget#fileTree {{ background: transparent; border-bottom: 1px solid {g['border']}; }}
+QTreeWidget#fileTree::item:selected {{ background: {g['panel_selected']}; }}
+QTreeWidget#fileTree::item:hover {{ background: {g['panel_hover']}; }}
+QTextBrowser#markdownPreview, QTextBrowser#htmlFallback {{ background: {g['panel_reading']}; }}
+QFrame#previewNotice {{ background: {g['panel_strong']}; border-bottom-color: {g['border']}; }}
+
+/* ---------- Common ---------- */
+QSplitter::handle {{ background: {g['border']}; }}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{ background: {g['scroll_handle']}; }}
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{ background: {g['scroll_handle_hover']}; }}
+"""
+
+
 def apply_theme(app, palette_name: str | None = None) -> tuple[str, str]:
     """Apply Fusion style, the palette (dark by default), fonts and the stylesheet to a QApplication."""
     from PySide6.QtGui import QColor, QFont, QPalette
@@ -564,7 +744,7 @@ def apply_theme(app, palette_name: str | None = None) -> tuple[str, str]:
         (role.Button, BG_BUTTON_ROUND),
         (role.ButtonText, TEXT_PRIMARY),
         (role.Highlight, ACCENT_USER_BUBBLE),
-        (role.HighlightedText, ON_ACCENT if _active_palette == "dark" else TEXT_PRIMARY),
+        (role.HighlightedText, ON_ACCENT if _active_palette != "light" else TEXT_PRIMARY),
         (role.ToolTipBase, BG_BUTTON_ROUND),
         (role.ToolTipText, TEXT_PRIMARY),
         (role.PlaceholderText, TEXT_SECONDARY),
@@ -590,7 +770,7 @@ def theme_mode() -> str:
 
 
 def resolve_mode(mode: str, scheme=None) -> str:
-    """Palette name for a mode. "system" follows Windows (unknown -> dark)."""
+    """Palette name for a mode. "system" follows Windows (unknown -> dark); "glass" is its own palette."""
     if mode not in THEME_MODES:
         mode = DEFAULT_THEME_MODE
     if mode != "system":

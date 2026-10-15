@@ -95,7 +95,7 @@ def ask_storage_recovery(message: str, offer_fresh: bool, parent: QWidget | None
 
 TIMEOUT_MIN_S = 10
 TIMEOUT_MAX_S = 600
-THEME_CHOICES = (("Dark", "dark"), ("Light", "light"), ("System", "system"))
+THEME_CHOICES = (("Dark", "dark"), ("Light", "light"), ("System", "system"), ("Glass", "glass"))
 
 
 class SettingsDialog(QDialog):
@@ -143,7 +143,8 @@ class SettingsDialog(QDialog):
         self.theme_combo.addItems([label for label, _ in THEME_CHOICES])
         modes = [mode for _, mode in THEME_CHOICES]
         self.theme_combo.setCurrentIndex(modes.index(theme_mode) if theme_mode in modes else 0)
-        self.theme_combo.setToolTip("System follows the Windows light/dark setting.")
+        self.theme_combo.setToolTip("System follows the Windows light/dark setting. "
+                                     "Glass: translucent panels over a dark gradient.")
         form.addRow("Theme", self.theme_combo)
         layout.addLayout(form)
         about = f"About: Local AI Assistant {__version__}"

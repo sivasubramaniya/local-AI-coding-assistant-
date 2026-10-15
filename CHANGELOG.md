@@ -2,6 +2,21 @@
 
 All notable changes to Local AI Assistant. Summarised from the `PLAN.md` changelog; dates are 2026.
 
+## [1.3.0] — 2026-10-15
+
+### Added
+- **Glass theme** (Settings → Theme → Glass): translucent panels over a dark navy→purple gradient with soft
+  blue/purple glows, 1px light borders and a brighter top edge. Qt has no real blur, so the panels are tinted,
+  not frosted. Built on the Phase 15 palette system: a third palette with the same tokens (all opaque, used by
+  dialogs, menus, tooltips and code) plus translucent effects that only the main window uses. Code blocks and
+  the code viewer stay solid. Switches live, is saved and restored like the other themes.
+- On Windows 11, Glass turns on a dark title bar and a Mica window frame (`app/ui/window_effects.py`, ctypes
+  `DwmSetWindowAttribute`); leaving Glass restores the default frame. No-op on other systems.
+- Tests: Light/Dark output locked by hashes (unchanged), Glass tokens and WCAG AA contrast, text contrast
+  over the translucent panels composited on every backdrop color, live switching, persistence, window effects;
+  repository checks (doc links, clean README, ignored build files, no tracked bytecode).
+- `scripts/theme_screenshots.py [MODE ...]` and `docs/screenshots/theme-glass-*.png`.
+
 ## [1.2.1] — 2026-10-13
 
 ### Fixed
@@ -127,3 +142,7 @@ First release.
 | 11 | Windows packaging |
 | 12 | Polish and release: performance trials, real-app test, smaller build, v1.0.0 |
 | 13 | Fast mode: optional, user-selected 7B model per chat; v1.1.0 |
+| 14 | Pre-publish cleanup: personal paths removed, tool-run restore fix; v1.1.1 |
+| 15 | Working Light/Dark/System theme with live switching; v1.2.0 |
+| 16 | HTML project preview fixed (real file URLs, missing-asset placeholders); v1.2.1 |
+| 17 | Glass theme: translucent panels, Windows 11 dark title bar + Mica; v1.3.0 |

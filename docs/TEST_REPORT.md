@@ -1,4 +1,4 @@
-# Final Test Report — Local AI Assistant 1.2.1
+# Final Test Report — Local AI Assistant 1.3.0
 
 Date: 2026-10-12 · Windows 11 Home 10.0.26300 · Python 3.12.10 · Ollama 0.40.2 ·
 model `qwen2.5-coder-14b:latest` (from `qwen2.5-coder:14b`, runs about 79% CPU / 21% GPU, ~3 tok/s) ·
@@ -23,6 +23,18 @@ server). **REAL** = the real local model and/or real compilers and processes.
 
 The one skip: `tests/test_validation.py::test_symlink_escape_is_rejected` — creating a symlink needs
 Developer Mode or admin rights on this machine. The junction-escape test (no privilege needed) ran and passed.
+
+## Release 1.3.0 (Phase 17, 2026-10-15)
+
+| Check | Result | Kind |
+|---|---|---|
+| `python -m pytest -v` | **717 passed, 1 skipped**, 12 deselected (the same symlink skip) | MOCK model; real SQLite, files, Qt (offscreen) |
+| Glass tests (`tests/test_glass_theme.py`) | Light/Dark output hashes unchanged; Glass tokens, WCAG AA, text contrast over translucent panels on every backdrop color; live Dark → Glass → Dark; saved and restored; window effects no-op offscreen and off Windows | — |
+| Repository checks (`tests/test_repo_hygiene.py`) | doc links resolve, README clean UTF-8, build files ignored, no tracked bytecode | git |
+| Window effects on Windows 11 | dark title bar + Mica accepted by DWM (`DwmSetWindowAttribute` returned S_OK) | REAL (this machine) |
+
+The pytest process again exited with 0xC0000409 after printing the result (Qt shutdown, see Known issues);
+unmodified `main` does the same. Integration tests were not re-run: this release changes no model code.
 
 ## Releases 1.2.0 and 1.2.1 (Phases 15–16, 2026-10-13)
 
