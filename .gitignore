@@ -1,47 +1,31 @@
-# Python
-venv/
-.venv/
+# Python bytecode
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+
+# Test cache
 .pytest_cache/
 
-# Coverage
-.coverage
-.coverage.*
-htmlcov/
-coverage.xml
+# Virtual environments
+venv/
+.venv/
 
-# Build output
+# PyInstaller output (keep the project's own spec file)
 build/
 dist/
-*.spec.bak
+*.spec
+!packaging/LocalAIAssistant.spec
 
-# Logs and local data
-*.log
+# Logs
 logs/
+*.log
+
+# Local app data when LAA_DATA_DIR points inside the repo (default is %LOCALAPPDATA%)
+/data/
 *.db
+*.db-journal
 *.db-wal
 *.db-shm
-*.sqlite
-data/*
-!data/.gitkeep
 
-# Secrets
-.env
-.env.*
-*.pem
-*.key
-
-# Generated projects and exports
-output/
-generated/
-exports/
-projects/
-
-# Editors
-.vscode/
-.idea/
-
-# Private design references (kept outside the repo)
-docs/ui-reference/ref-*.png
+# Captures from `python main.py --screenshot PATH` saved in the repo root
+# (docs/screenshots/ is documentation and stays tracked)
+/*.png

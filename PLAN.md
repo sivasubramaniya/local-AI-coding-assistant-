@@ -1,247 +1,181 @@
-# PLAN.md — Local AI Assistant Implementation Plan
+# PLAN
 
-Status legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified · `[!]` blocked
+## Phase 0 — Glass Theme  `[x]`
 
-Rule: complete, test and review each phase before starting the next. Claude Code must
-stop at every phase boundary and wait for approval.
+### Goal
+Add a selectable "Glass" theme (frosted translucent panels over a dark
+navy→purple gradient with soft glows) next to the existing Dark theme.
+Dark stays the default and must look exactly as it does today.
 
----
+### Visual reference
+- `docs/glass-refs/` — frosted panels, 1px light borders (rgba white ~12–22%),
+  brighter top edge, rounded corners, faint blue/purple glows behind.
+  (Folder not present in this checkout; the description above was used.)
 
-## Phase 1 — Environment Inspection and Model Verification  `[x]`
+### Restrictions
+- Theme only: do not change layout, sizes, fonts, behavior or business logic.
+- Qt QSS has NO backdrop-filter/blur. Do not write CSS blur rules.
+- Keep `COLORS` in `theme.py` hex-only (tests/test_theme.py checks it);
+  rgba glass values go in a separate `GLASS` dict.
+- Dark stylesheet output must stay byte-identical: build Glass as the Dark
+  sheet + an override block appended after it.
+- No new pip packages. Windows API access only through `ctypes`.
+- No hard-coded user paths. Save the theme with the other settings
+  (store.set_setting, key "theme").
+- Code blocks stay solid and darker than glass panels, for readability.
 
-> Model checks done 2026-10-12: `qwen2.5-coder-14b:latest` created from `ollama/Modelfile`
-> (FROM qwen2.5-coder:14b, temperature 0.2, top_p 0.8, num_ctx 8192). Timed request: 40.0 s load,
-> 17 tokens at 2.7 tok/s, 75.4 s wall (cold start; slow hardware path).
+### Tasks
+- [x] 0.1  `app/ui/theme.py`: `THEMES`, `DEFAULT_THEME`, `current_theme()`,
+          `normalize_theme()`; `build_stylesheet(..., theme_name)` and
+          `apply_theme(app, theme_name="dark")`, callable again to switch live.
+- [x] 0.2  `GLASS` tokens: gradient stops, glow colors, panel / hover /
+          selected fills, border, highlight, code colors, opaque popup colors.
+- [x] 0.3  Glass overrides: sidebar, top bar, composer pill, user bubble,
+          file/agent cards, preview panel + header, file tree, menus,
+          tooltips, scrollbars, dialogs, QLineEdit/QComboBox.
+          Do NOT style QSpinBox (it loses its arrow buttons).
+- [x] 0.4  Backdrop: QMainWindow linear gradient; central widget gets
+          objectName "glassBackdrop" with a radial glow; #chatPanel gets a
+          second glow; chatInner / chatView transparent.
+- [x] 0.5  Popups and dialogs are separate windows: use opaque colors there,
+          not rgba.
+- [x] 0.6  Colors drawn directly in Python must follow the theme:
+          sidebar.py delegate (hover/selected rows), markdown_render.py
+          (code block + header), message_document_css (inline code),
+          code_view.py (line-number gutter). Add helpers
+          `item_background()`, `code_colors()`, `qcolor()` (parses rgba).
+- [x] 0.7  New `app/ui/window_effects.py`: Windows 11 dark title bar + Mica
+          frame via DwmSetWindowAttribute; returns False, never raises, on
+          other platforms.
+- [x] 0.8  `app/ui/dialogs.py`: Theme combo = "Dark", "Glass" (replace
+          "Light (coming later)"); `theme_name` param + `theme_name()` getter.
+- [x] 0.9  `app/ui/main_window.py`: THEME_SETTING; load + apply at startup
+          in `_load_saved_settings`; save + apply live in `open_settings`;
+          keep old 2- and 3-value settings_editor tuples working.
+- [x] 0.10 `main.py`: `--theme dark|glass` option (also for --screenshot).
 
-**Goal:** Know exactly what exists before building anything. Read-only phase.
+### Tests
+- [x] Every GLASS token is valid rgba()/hex; COLORS has no rgba.
+- [x] Glass stylesheet: braces balanced, starts with the Dark sheet, contains
+      #sidebar, #composerPill, #userBubble, #fileCard, #previewHeader,
+      #glassBackdrop, #chatPanel; no "backdrop-filter".
+- [x] Dark output unchanged; unknown theme name falls back to Dark.
+- [x] qcolor() parses rgba and hex.
+- [x] apply_theme switches Dark → Glass → Dark live (styleSheet, code_colors).
+- [x] Settings: theme saved, applied live, restored on restart.
+- [x] Update the old test that asserted "Light" is disabled.
+- [x] window_effects: no-op off Windows, never raises.
+- [x] Full suite: `python -m pytest -v`.
 
-- [x] Inspect repository structure and git status
-- [x] Check Python, pip, Git and Ollama versions
-- [x] Check for PySide6, pytest, PyInstaller (report only, do not install)
-- [x] Confirm the Ollama service responds on port 11434 (after install in Phase 2: v0.40.2)
-- [x] Confirm the exact model `qwen2.5-coder-14b:latest` exists (`ollama list`)
-- [x] Inspect model parameters (`ollama show --modelfile`)
-- [x] Send one small coding request and time it
-- [x] Report RAM and GPU
-- [x] Write the Phase 1 report: blockers, warnings, Phase 2 plan
+### Done when
+- Settings → Theme switches Dark ↔ Glass live; choice survives restart.
+- `python main.py --screenshot glass.png --theme glass` renders correctly.
+- All text readable on glass; Dark theme unchanged.
+- All tests pass; Phase Report written; Changelog row added.
 
-**Restrictions:** no file changes, no installs, no model downloads, no system changes.
-**Deliverable:** Phase 1 report.
+Report: [docs/reports/PHASE_0_REPORT.md](docs/reports/PHASE_0_REPORT.md) · Approved 2026-10-14
 
----
+## Phase 1 — Test & Dev Setup  `[x]`
 
-## Phase 2 — Project Foundation  `[x]`
+### Goal
+Make the test setup reproducible so `python -m pytest` works with no extra flags.
 
-- [x] Create or confirm the package structure (`app/` and its subpackages)
-- [x] Central configuration (`app/config.py`): data dir, output dir, model name, Ollama URL, timeouts
-- [x] Logging setup (file and console)
-- [x] Custom exception classes
-- [x] `requirements.txt` with pinned versions (PySide6-Essentials for now; full PySide6/WebEngine pending)
-- [x] Minimal `main.py` that starts without errors
-- [x] Tests for config and logging
+### Restrictions
+- No changes to app code or app dependencies.
+- No new runtime packages; dev-only packages go in requirements-dev.txt.
 
-**Deliverable:** clean, testable Python foundation; `pytest` passes.
+### Tasks
+- [x] 1.1 Add pytest config (pytest.ini or pyproject.toml [tool.pytest.ini_options]):
+          register `gui` and `integration` markers; skip `integration` by default
+          (addopts = -m "not integration"); testpaths = tests.
+- [x] 1.2 Add requirements-dev.txt (pytest, pytest-qt) with pinned versions
+          matching what is installed in the venv.
+- [x] 1.3 Create CLAUDE.md with project rules: PySide6 desktop app, local Ollama only,
+          no cloud APIs, theme tokens live in app/ui/theme.py, Dark must stay
+          unchanged, run tests with `python -m pytest`.
+- [x] 1.4 README: add a "Running tests" section (normal run + how to run
+          integration tests with -m integration).
 
----
+### Tests
+- [x] `python -m pytest` with no flags: 0 failed, no "Unknown pytest.mark" warnings.
+- [x] `python -m pytest -m integration --collect-only` lists the 11 integration tests.
 
-## Phase 3 — Native Desktop UI  `[x]`
+### Done when
+- Plain `python -m pytest` passes, the markers give no warnings, Phase Report is written.
 
-- [x] Main PySide6 window titled "Local AI Assistant"
-- [x] New Chat button and Chat History sidebar (in-memory until Phase 5)
-- [x] Message input with Send and Cancel (Stop)
-- [x] Response area with syntax-highlighted code blocks and Copy buttons
-- [x] Code viewer and project file tree
-- [x] Generate Project (Project mode chip), Export Project, Export ZIP controls (stubs for now)
-- [x] Model indicator, Ollama status (stub: Disconnected), progress and error indicators
-- [x] Worker-thread pattern (`QThread` + `QObject`) for long tasks; demo FakeStreamWorker
+Report: [docs/reports/PHASE_1_REPORT.md](docs/reports/PHASE_1_REPORT.md) · Approved 2026-10-14
 
-**Deliverable:** app opens in its own window with no browser.
+## Phase 2 — Repo Cleanup  `[x]`
 
----
+### Goal
+Clean repository: no generated files tracked, no broken links in README.
 
-## Phase 4 — Ollama Integration and Coding System Prompt  `[x]`
+### Restrictions
+- No app code changes. No new packages.
+- Never delete user data, chat history, or anything outside the repo folder.
 
-> Verified against the real model 2026-10-12: `python -m pytest -m integration -v` → 3 passed
-> (ensure_ready, is_prime parses, off-topic redirect). Manual UI prompt still to be tried by the owner.
+### Tasks
+- [x] 2.1 Add .gitignore: __pycache__/, *.pyc, .pytest_cache/, venv/ and .venv/,
+          build/, dist/, *.spec outputs from PyInstaller (keep packaging/LocalAIAssistant.spec),
+          logs, local data dir, screenshots generated by --screenshot.
+- [x] 2.2 (Not a git repo: nothing to untrack.) If this is a git repo, untrack already-committed __pycache__/ and *.pyc
+          with `git rm -r --cached` (files stay on disk). Show me the list first.
+- [x] 2.3 README broken links (CHANGELOG.md, LICENSE, docs/*.md): list each one,
+          then for each either create a short real file or remove/replace the link.
+          Ask me before creating LICENSE (I choose the license).
+- [x] 2.4 Add a CHANGELOG.md built from the PLAN.md Changelog table, if 2.3 keeps the link.
 
-- [x] `ollama_client.py`: health check, model check, chat, streaming
-- [x] `coding_system_prompt.txt`: coding-only behavior, polite redirection of off-topic requests
-- [x] System prompt applied to every model call
-- [x] Streaming tokens to the UI through signals
-- [x] Timeout, cancellation and clear error messages
-- [x] No fallback to other models or cloud services (loopback-only URL, exact model match)
-- [x] Unit tests with mocked HTTP responses; integration tests against the real model (3 passed)
+### Tests
+- [x] Test: every relative link in README.md points to a file that exists.
+- [x] Test: no .pyc / __pycache__ is tracked (skip if not a git repo).
+- [x] `python -m pytest`: 0 failed, no warnings.
 
-**Deliverable:** working local coding chat.
+### Done when
+- README has no broken links, generated files are ignored, Phase Report written.
 
----
+Report: [docs/reports/PHASE_2_REPORT.md](docs/reports/PHASE_2_REPORT.md) · Approved 2026-10-14
 
-## Phase 5 — Chat History and SQLite Storage  `[x]`
+## Phase 3 — Git & GitHub Sync  `[ ]`
 
-- [x] Schema v1: `conversations`, `messages`, `projects`, `app_settings` plus `schema_version`; WAL, foreign keys, busy_timeout
-- [x] Migrations (ordered, one transaction each); newer schema refused untouched; corrupt file backed up, never deleted
-- [x] `ChatStore` protocol shared by `InMemoryChatStore` and `SqliteChatRepository`
-- [x] Create, reopen (last chat on start), rename (1–80 chars) and delete (confirm, cascade) chats
-- [x] Restore history into the UI and into the model context; stopped/error replies saved with status
-- [x] Thumbs-down feedback persists; Projects section reads the `projects` table
-- [x] Link chats to generated projects (FK `ON DELETE SET NULL`; rows are written in Phase 6)
-- [x] Tests for CRUD, rollback, migrations, corruption, restart persistence and storage errors in the UI
+### Goal
+Put Phases 0–2 under git and onto GitHub without losing anything on GitHub
+or on this PC.
 
-**Deliverable:** persistent local chat history.
+### Repo
+<YOUR-GITHUB-URL>
 
----
+### Restrictions
+- NEVER force-push. NEVER rewrite or delete GitHub history.
+- Never delete files in this folder. No app code changes. No new packages.
+- Ask me before every push.
 
-## Phase 6 — Coding Agent and Project Generator  `[x]`
+### Tasks
+- [ ] 3.1 Clone the GitHub repo into a NEW sibling folder (do not touch this one).
+- [ ] 3.2 Compare: list files that differ between GitHub main and this folder,
+          and any files on GitHub that are missing here. Show me before copying.
+- [ ] 3.3 Create branch `phase-0-2-glass-theme-cleanup` in the clone, copy this
+          folder's files in (respecting .gitignore), commit in logical commits:
+          (a) Glass theme, (b) test & dev setup, (c) repo cleanup + docs.
+- [ ] 3.4 Single changelog: CHANGELOG.md is the only source of truth. Replace
+          PLAN.md's Changelog table with a link to CHANGELOG.md, and update the
+          phase-workflow step "add a Changelog row" wording in CLAUDE.md.
+- [ ] 3.5 Run `python -m pytest` in the clone; the git-tracking test must now run
+          and pass (no bytecode tracked).
+- [ ] 3.6 After my OK: push the branch and open a Pull Request into main
+          (use `gh` if installed and logged in; otherwise give me the PR link).
 
-- [x] Task classifier, rules only (generate, debug, explain, refactor, review, project, off_topic)
-- [x] Project planning step: strict JSON plan (file list before contents), one corrective retry
-- [x] Structured file output: one call per file, exactly one fenced block (four backticks for Markdown)
-- [x] Parser that rejects malformed, partial or unsafe responses; partial failures listed, successes kept
-- [x] Create files through the path validator (created early in `app/validation/path_validator.py`)
-- [x] Edit files: full-file or unified-diff suggestions shown as a diff; Apply writes with `.bak-<ts>` backups
-- [x] Plan card (Apply/Cancel) before writing; progress per file; Stop keeps written files
-- [x] Projects saved under `projects_dir/<safe-name>[-N]`, linked to the chat (DB v2 `message_files`)
-- [x] Model text is never executed (test asserts no subprocess is started)
+### Tests
+- [ ] Test that PLAN.md links to CHANGELOG.md and has no separate changelog table.
+- [ ] `python -m pytest`: 0 failed, 0 skipped git test, no warnings.
 
-**Deliverable:** local multi-file project generator.
-
----
-
-## Phase 7 — Security and Validation  `[x]`
-
-- [x] `path_validator.py`: rejects absolute, drive, UNC, `..`, reserved names, illegal chars, long paths, symlink/junction escapes
-- [x] Writes restricted to the approved project directory (generator writer, edit apply, backups)
-- [x] Overwrite confirmation (edits only after Apply on the Changes card; generator never overwrites)
-- [x] `project_validator.py`: expected files exist, no empty files, README present (shown after generation)
-- [x] `tool_runner.py`: program + argument allowlist, `shell=False`, cwd = project root, timeout with process-tree kill, captured stdout/stderr/exit code, truncation, Stop
-- [x] Approval dialog shows the exact command and working directory; refused commands never reach it
-- [x] Security tests: 45 malicious paths (x2), junction escape, 47 allowlist bypass attempts, 12 shell-syntax strings, timeout tree kill, UI reject flow
-
-**Deliverable:** controlled file-generation and command-execution workflow.
-
----
-
-## Phase 8 — Testing and Debugging Workflow  `[x]`
-
-- [x] Unit and integration test coverage across modules (`pytest --cov`: 88% of app code; QThread code is not traced)
-- [x] Mocks for unavailable services (scripted FakeOllama, loopback fake server, JDK-less skips)
-- [x] Generate a sample Java calculator project through the app's own generator (REAL model, `scripts/run_java_sample.py`)
-- [x] Run approved compilers and tests (`javac`, `java`, `python -m pytest`) via the allowlisted runner; JDK 21 installed with winget
-- [x] Feed errors back to the model for fixes; diff shown; apply after confirmation; re-run (max 3 rounds, each in the chat)
-- [x] Clearly separate mock results from real results (REAL/MOCK labels in reports, `integration` marker)
-
----
-
-## Phase 9 — Project Export  `[x]`
-
-- [x] Export to a user-selected folder (default from settings, initially the Desktop); `-2`, `-3` on name collisions
-- [x] Include source, tests, config and README; exclude caches, venvs, build output, backups, `.git` (optional), secrets
-- [x] Create a ZIP archive (ZIP_DEFLATED)
-- [x] Verify archive contents after creation (testzip, names, sizes, extraction) before reporting success
-- [x] Build/run/test instructions in the exported README (added to the copy when missing)
-- [x] Export / Export ZIP buttons, success card with Open folder, Settings dialog (export folder, command timeout, theme placeholder)
-
----
-
-## Phase 10 — Offline Verification  `[~]`
-
-> Automated part done. The Wi-Fi-off manual checklist in `docs/OFFLINE.md` must be run by the owner.
-
-- [~] Disconnect the network and test chat, generation, storage and export (automated with a socket guard; manual run pending)
-- [x] Confirm no cloud APIs are called (code audit documented; whole suite passes with `--offline-guard`)
-- [x] Test missing-model and missing-dependency scenarios
-- [x] Document required local tools (`docs/OFFLINE.md`)
-- [x] HTML preview blocks remote resources (off-the-record WebEngine profile + interceptor)
-
----
-
-## Phase 11 — Windows Packaging  `[x]`
-
-- [x] `packaging/LocalAIAssistant.spec` (onedir, windowed, no UPX): prompt, icons, Modelfile and docs bundled; tests excluded
-- [x] Bundle the prompt file and assets (loaded through `sys._MEIPASS` in the packaged build)
-- [x] Data directory stays `%LOCALAPPDATA%\LocalAIAssistant` in the packaged build
-- [x] Build (`pyinstaller packaging\LocalAIAssistant.spec --noconfirm`, 2.8 min, 567 MB) and test from `dist\`: `--check` exit 0 (attaches to the terminal, writes `logs\check.txt`), window title "Local AI Assistant", clean close, missing-model message points at the bundled Modelfile
-- [x] `docs/INSTALL.md`: prerequisites, Ollama + model setup, first run, troubleshooting (Ollama not running, model missing, slow responses, antivirus, SmartScreen)
-- [x] `docs/TEST_REPORT.md` with all counts, MOCK vs REAL and known limitations
-- [x] Worker threads are joined before the app exits (`shutdown_workers`)
-
----
-
-## Phase 12 — Polish and Release  `[x]`
-
-- [x] Performance trials (REAL): num_ctx 4096 and flash attention + q8_0 KV cache vs the 8192 baseline; none reliably faster, defaults kept (`docs/PERFORMANCE.md`)
-- [x] REAL end-to-end app test (`tests/test_integration_app.py`): chat, stop, project mode with tests/repair, ZIP export, restart; screenshots in `docs/screenshots/`
-- [x] Fixed the bugs it found (reply replacement, action-row overlap, Markdown paragraphs, fence labels, export toast, offscreen fonts) with regression tests
-- [x] Smaller build: only the Qt modules the app loads (567 MB → 322 MB), WebEngine preview verified in the exe
-- [x] Release prep: `.gitignore` proven with `git check-ignore`, tracked files scanned (no secrets, no files > 5 MB, personal paths removed from sample reports)
-- [x] Version 1.0.0 in `--check`, `--version` and Settings/About; README, CHANGELOG, MIT LICENSE
-
----
-
-## Phase 13 — Fast Mode  `[x]`
-
-> Owner decision 2026-10-12: the default stays `qwen2.5-coder-14b:latest`; ONE optional model,
-> `qwen2.5-coder-7b:latest`, may be selected by the user per chat. No silent fallback.
-
-- [x] `ollama/Modelfile.fast` (FROM qwen2.5-coder:7b, same settings); `qwen2.5-coder-7b:latest` created
-- [x] Config `fast_model_name` (validated; `LAA_FAST_MODEL_NAME` override logs a warning)
-- [x] Quality (14B) / Fast (7B) toggle in the composer; default for new chats in Settings (`app_settings`)
-- [x] Model saved on the chat and on each answer (DB migration v3: `messages.model_name`); status lines show the model
-- [x] Health check covers both models; status card shows the selected one; missing model → amber + exact command, never a fallback
-- [x] Project generation uses the chat's model; Plan card note in Fast mode
-- [x] `--check` reports both models and the default
-- [x] MOCK tests (10) + REAL tests (7B is_prime, 7B off-topic) + REAL 14B-vs-7B benchmark + REAL 7B project run
-
----
-
-## Phase 14 — Pre-publish Cleanup  `[x]`
-
-- [x] Found every tracked file and commit containing the Windows user name, `C:\Users\` or "OneDrive" (text and images)
-- [x] Current files clean; screenshots 06–09 retaken under `D:\laa-demo` (REAL app test 5/5)
-- [x] `tests/test_no_personal_paths.py` fails on any `C:\Users\<name>` path in tracked text files
-- [x] Backup at `D:\coder slm-backup`; history rewritten with git filter-repo (paths replaced, old screenshots stripped); tags re-created
-- [x] Restored tool runs show "Checks passed"/"Checks failed" (schema v4 `messages.kind`, backfilled) + regression test
-- [x] Version 1.1.1; pytest, exe rebuild and `--check` verified
-
----
-
-## Final Deliverables Checklist
-
-- [x] Native Windows desktop app (PySide6)
-- [x] Fixed local Ollama model integration
-- [x] Coding-only system prompt
-- [x] New Chat and persistent Chat History
-- [x] Code viewer and project preview
-- [x] Coding agent and multi-file generator
-- [x] Safe file operations and command approval
-- [x] Automated tests and validation
-- [x] SQLite storage
-- [x] Desktop export and ZIP
-- [x] README and run instructions
-- [~] Offline verification report (automated part done; manual Wi-Fi-off checklist pending)
-- [x] PyInstaller build
-- [x] Installation and troubleshooting guide
-- [x] Final test report and known limitations
-
----
+### Done when
+- Branch pushed, PR open, tests pass in the clone, Phase Report written.
+- From then on I work in the cloned folder, not this one.
 
 ## Changelog
 
-| Date | Phase | Summary | Tests |
+| Date | Phase | Change | Tests |
 |---|---|---|---|
-| 2026-10-11 | — | Plan created | — |
-| 2026-10-11 | 1 | Environment inspected (read-only). Blocked: no Ollama, no model, no Git, only Python 3.15 | none |
-| 2026-10-11 | 2 | Installed Python 3.12.10, Git, Ollama 0.40.2; venv + packages. Added config, errors, logging, system prompt, main.py, tests, git init | 54 passed |
-| 2026-10-11 | 3 | Native PySide6 UI: theme/QSS, SVG icons, sidebar, chat view, composer, preview panel (QTextBrowser HTML fallback), worker pattern, demo stream, `--screenshot` | 135 passed |
-| 2026-10-11 | 4 | Ollama client (httpx, streaming, abort), chat service (system prompt + trimming), health checks, real worker, `--demo`, loopback-only URL, Modelfile; fixed worker lifetime crash; QtWebEngine installed | 193 passed, 3 integration skipped (model missing) |
-| 2026-10-12 | 1+4 | Real-model verification: `ollama create qwen2.5-coder-14b -f .\ollama\Modelfile`, modelfile inspected, timed request (2.7 tok/s), integration tests | 3 integration passed (REAL) |
-| 2026-10-12 | 5 | SQLite chat history (stdlib sqlite3): schema v1, migrations, corrupt/newer DB handling, ChatStore protocol, restart restore, feedback, `--check` DB report; fixed stale worker signal ending the next stream | 252 passed (MOCK), 3 integration deselected |
-| 2026-10-12 | 6 | Coding agent: task classifier, two-step project generator (plan JSON + per-file blocks, retry), plan/changes cards, edit flow with diffs and backups, project context for debug/refactor, path validator, DB migration v2 (message_files) | 333 passed (MOCK); real generator test: see Phase 7 row |
-| 2026-10-12 | 7 | Security: path validator hardening + attack suite, project validator, allowlisted tool runner (shell=False, timeouts, tree kill), approval flow + Run project tests; config `command_timeout_s`. Phase 6 real generator integration test passed (4.1 min) | 536 passed, 1 skipped (symlink privilege) (MOCK); 1 integration passed (REAL) |
-| 2026-10-12 | 8 | Debug workflow: Java/Python test detection, command sequences, JDK discovery, repair loop (max 3 rounds, diff + confirm + re-run), pytest-cov; generator fixes found by REAL runs (request + earlier files in file prompts, lenient Markdown, path-before-block edits). REAL: Java sample generated and passed (run 2), REAL repair fixed an injected bug in 1 round; run 1 (before fixes) failed and is kept as evidence | 601 passed, 1 skipped (MOCK); coverage 88%; REAL: Java sample PASS, repair demo PASS |
-| 2026-10-12 | 9 | Project export: folder export with exclusions and -N collisions, README instructions, verified ZIP (testzip, names, sizes, extraction), Export/ZIP buttons with success card, Settings dialog (export folder, command timeout) | 601 passed, 1 skipped (MOCK) |
-| 2026-10-12 | 10 | Offline verification (automated): code audit, socket guard (--offline-guard), loopback end-to-end test of chat/generation/storage/export, missing-model/Ollama-stopped checks, HTML preview blocks remote requests, docs/OFFLINE.md with the manual Wi-Fi-off checklist | 601 passed, 1 skipped; guarded suite passes (intermittent exit crash, see known issues) |
-| 2026-10-12 | 11 | Windows packaging: PyInstaller spec (onedir, windowed), bundled prompt/icons/Modelfile/docs, --check console attach + logs\check.txt, bundled-Modelfile hint, worker shutdown at exit, INSTALL.md, TEST_REPORT.md, README | 601 passed, 1 skipped (MOCK); 4 integration passed (REAL); packaged exe --check and window launch OK (REAL) |
-| 2026-10-12 | 12 | Polish and release 1.0.0: performance trials (nothing kept), REAL end-to-end app test + 6 fixes, build 567 → 322 MB, gitignore/secret scan, version 1.0.0, README/CHANGELOG/LICENSE | 611 passed, 1 skipped (MOCK); 9 integration passed (REAL); exe --check OK |
-| 2026-10-13 | 13 | Fast mode: optional user-selected `qwen2.5-coder-7b:latest` per chat (no fallback), DB v3, both-model health and --check, plan-card note, parser fix found by the REAL 7B run; v1.1.0 | 628 passed, 1 skipped (MOCK); 11 integration passed incl. 1 re-run after a sleep-related Ollama timeout (REAL); 7B 6.40 vs 14B 3.19 tok/s |
-| 2026-10-13 | 14 | Pre-publish cleanup: personal paths removed from files and history (filter-repo, backup kept), neutral screenshots, personal-path test, tool-run restore fix (DB v4), v1.1.1 | 633 passed, 1 skipped (MOCK); REAL app test 5/5; exe --check OK |
+| 2026-10-14 | 0 — Glass Theme | Selectable Glass theme (Settings → Theme, `--theme`), live switching, saved setting, Windows 11 dark title bar + Mica; Dark output byte-identical | 680 passed, 2 skipped, 11 deselected (integration) |
+| 2026-10-14 | 1 — Test & Dev Setup | pytest.ini (markers, integration skipped by default), requirements.txt + requirements-dev.txt pinned to the venv, CLAUDE.md, README "Running tests" | 682 passed, 2 skipped, 11 deselected (integration), 0 warnings |
+| 2026-10-14 | 2 — Repo Cleanup | .gitignore for generated files; README links fixed (CHANGELOG.md, MIT LICENSE, docs/OFFLINE.md, docs/TEST_REPORT.md, Dark/Glass demo screenshots); stray UTF-16 line removed; not a git repo, nothing to untrack | 691 passed, 3 skipped, 11 deselected (integration), 0 warnings |

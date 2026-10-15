@@ -1,93 +1,10 @@
 # Changelog
 
-All notable changes to Local AI Assistant. Summarised from the `PLAN.md` changelog; dates are 2026.
+Built from the Changelog table in [PLAN.md](PLAN.md). Each phase has a full report in
+[docs/reports/](docs/reports/PHASE_0_REPORT.md).
 
-## [1.1.1] — 2026-10-13
-
-Pre-publish cleanup.
-
-### Fixed
-- Restored test/command runs showed the model name, and failed runs came back as red error cards with
-  raw Markdown. Messages now record their kind (database schema v4: `messages.kind`, existing tool-run
-  rows are backfilled) and restore as "Checks passed" / "Checks failed".
-
-### Changed
-- Screenshots 06–09 retaken in a neutral folder (`D:\laa-demo`), so no Windows user name is visible.
-- Personal paths removed from sample reports and from the git history; old screenshots that showed them were
-  stripped from history. A test now fails if a tracked text file contains a `C:\Users\<name>` path.
-
-## [1.1.0] — 2026-10-12
-
-### Added
-- **Fast mode** (owner decision): an optional second model, `qwen2.5-coder-7b:latest`
-  (`ollama/Modelfile.fast`, same settings as the default). Chosen per chat with the **Quality (14B) /
-  Fast (7B)** toggle in the composer; the default for new chats is set in Settings. The default model is
-  still `qwen2.5-coder-14b:latest`, and the app never switches models by itself.
-- The chosen model is saved on the chat and on every answer (database schema v3: `messages.model_name`);
-  status lines show which model answered.
-- Health checks look at both models; the status card shows the selected one. A missing selected model gives
-  the amber "Model missing" state with the exact `ollama create` command — no fallback in either direction.
-- `--check` reports both models (present/missing) and which one is the default.
-- The Plan card notes "Fast mode: quicker, may need more repair rounds" when Fast mode is on.
-- REAL measurements: 7B is about 2× faster (6.40 vs 3.19 tok/s); a 7B to-do project passed its tests after
-  2 repair rounds (`docs/PERFORMANCE.md`).
-
-### Fixed
-- File answers with an extra snippet in another language (for example a `bash` "run it" block) were
-  rejected; now accepted only when exactly one block is in the file's language (found by the 7B run).
-- `new_chat()` did not show the chat's model in the composer and status card.
-
-## [1.0.0] — 2026-10-12
-
-First release.
-
-### Added
-- **Desktop app** (PySide6, dark theme, three-column layout): chat, sidebar with Recents and Projects,
-  syntax-highlighted code blocks with Copy, code viewer, project preview panel with an offline HTML preview.
-- **Local model only**: Ollama on `localhost` with the exact model `qwen2.5-coder-14b:latest`
-  (`ollama/Modelfile`: temperature 0.2, top_p 0.8, num_ctx 8192); no fallback model, no cloud API.
-- **Streaming chat** with Stop, Regenerate, Retry, clear error cards and a live Ollama status card.
-- **Chat history** in SQLite (schema v2 with migrations, WAL, corrupt-file backup, newer-schema protection).
-- **Project mode**: strict JSON plan → Plan card → one call per file, retry once, partial failures listed;
-  projects saved under `%LOCALAPPDATA%\LocalAIAssistant\projects` and linked to the chat.
-- **Edits and repair loop**: suggested changes shown as diffs and applied only after confirmation (with
-  backups); failing tests go back to the model for at most 3 repair rounds.
-- **Security**: path validator (traversal, drive/UNC paths, reserved names, symlink/junction escapes),
-  allowlisted command runner (`shell=False`, project-root cwd, timeouts, process-tree kill), approval dialog.
-- **Export** to a folder or a verified ZIP, with exclusions for caches, venvs, backups and secrets.
-- **Offline verification**: code audit, socket guard test mode (`--offline-guard`), documented manual checklist.
-- **Packaging**: PyInstaller onedir build (322 MB), `--check` and `--version`, version 1.0.0 in Settings/About.
-- **Docs**: README, INSTALL, OFFLINE, PERFORMANCE, TEST_REPORT; MIT license.
-
-### Changed during development
-- Generator quality fixes found by REAL model runs: file prompts repeat the request and include files
-  already written; Markdown files parsed leniently; edits recognised when the path is on the line before the block.
-- Package size reduced from 567 MB to 322 MB by bundling only the Qt modules the app loads.
-
-### Fixed during development
-- A late "cancelled" signal from a stopped worker could end the next answer.
-- Export results were handled on the worker thread.
-- Worker threads are joined before exit (Qt aborted the process when a running QThread was destroyed).
-- Offscreen screenshots had no fonts (tests now point Qt at the Windows fonts folder).
-
-### Performance
-- Tuning trials (num_ctx 4096, flash attention + q8_0 KV cache) were not reliably faster on a 4 GB-VRAM
-  laptop, so the defaults were kept. See `docs/PERFORMANCE.md`.
-
-## Development milestones
-
-| Phase | Summary |
-|---|---|
-| 1 | Environment inspection; model created from the Modelfile and verified |
-| 2 | Project foundation: config, logging, errors, tests |
-| 3 | Native PySide6 UI |
-| 4 | Ollama integration and coding system prompt |
-| 5 | SQLite chat history |
-| 6 | Coding agent and project generator |
-| 7 | Security and validation |
-| 8 | Testing and debugging workflow (REAL Java sample + repair) |
-| 9 | Project export |
-| 10 | Offline verification (automated part) |
-| 11 | Windows packaging |
-| 12 | Polish and release: performance trials, real-app test, smaller build, v1.0.0 |
-| 13 | Fast mode: optional, user-selected 7B model per chat; v1.1.0 |
+| Date | Phase | Change | Tests |
+|---|---|---|---|
+| 2026-10-14 | 0 — Glass Theme | Selectable Glass theme (Settings → Theme, `--theme`), live switching, saved setting, Windows 11 dark title bar + Mica; Dark output byte-identical | 680 passed, 2 skipped, 11 deselected (integration) |
+| 2026-10-14 | 1 — Test & Dev Setup | pytest.ini (markers, integration skipped by default), requirements.txt + requirements-dev.txt pinned to the venv, CLAUDE.md, README "Running tests" | 682 passed, 2 skipped, 11 deselected (integration), 0 warnings |
+| 2026-10-14 | 2 — Repo Cleanup | .gitignore for generated files; README links fixed (CHANGELOG.md, MIT LICENSE, docs/OFFLINE.md, docs/TEST_REPORT.md, Dark/Glass demo screenshots); stray UTF-16 line removed; not a git repo, nothing to untrack | 691 passed, 3 skipped, 11 deselected (integration), 0 warnings |
