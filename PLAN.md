@@ -230,7 +230,7 @@ stop at every phase boundary and wait for approval.
 
 ---
 
-## Phase 17 — Glass Theme  `[~]`
+## Phase 17 — Glass Theme  `[x]`
 
 Goal: add "Glass" as a fourth theme next to Light / Dark / System, built on Phase 15's palette
 system. Existing themes must look exactly as they do now.
@@ -249,7 +249,7 @@ stay solid. Don't style QSpinBox. No new packages. Follow the repo's versioning 
 - [x] 17.7 Glass screenshot in `docs/screenshots`, README + CHANGELOG entry
 - [x] Tests: hash/snapshot test that Light, Dark, System output is unchanged; full suite with the repo's pytest config: 0 failed
 - [x] Glass selectable and live; other themes unchanged (hash tests); 717 passed, 1 skipped (MOCK); v1.3.0
-- [ ] Branch `phase-17-glass-theme` pushed and PR opened (waiting for owner OK)
+- [x] Reviewed by phase-reviewer (APPROVE WITH NOTES, no critical issues); branch `phase-17-glass-theme` pushed; PR: https://github.com/sivasubramaniya/local-AI-coding-assistant-/compare/main...phase-17-glass-theme?expand=1
 
 ---
 

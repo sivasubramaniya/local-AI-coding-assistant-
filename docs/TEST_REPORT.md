@@ -31,7 +31,7 @@ Developer Mode or admin rights on this machine. The junction-escape test (no pri
 | `python -m pytest -v` | **717 passed, 1 skipped**, 12 deselected (the same symlink skip) | MOCK model; real SQLite, files, Qt (offscreen) |
 | Glass tests (`tests/test_glass_theme.py`) | Light/Dark output hashes unchanged; Glass tokens, WCAG AA, text contrast over translucent panels on every backdrop color; live Dark → Glass → Dark; saved and restored; window effects no-op offscreen and off Windows | — |
 | Repository checks (`tests/test_repo_hygiene.py`) | doc links resolve, README clean UTF-8, build files ignored, no tracked bytecode | git |
-| Window effects on Windows 11 | dark title bar + Mica accepted by DWM (`DwmSetWindowAttribute` returned S_OK) | REAL (this machine) |
+| Window effects on Windows 11 | manual check (a real window on the `windows` platform; the automated tests run offscreen and only cover the no-op paths): `DwmSetWindowAttribute` returned S_OK for the dark title bar and for Mica | REAL, manual (this machine) |
 
 The pytest process again exited with 0xC0000409 after printing the result (Qt shutdown, see Known issues);
 unmodified `main` does the same. Integration tests were not re-run: this release changes no model code.
